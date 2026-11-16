@@ -1,4 +1,4 @@
-export type AuthMode = "password" | "otp" | "recovery" | "new-password";
+export type AuthMode = "password" | "otp" | "register" | "recovery" | "new-password";
 
 const ERROR_MESSAGES: Record<string, string> = {
   unregistered:
@@ -51,10 +51,76 @@ export function isValidIdentifier(raw: string): boolean {
   if (value.includes("@")) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
-  return /^[0-9]{6,30}$/.test(value);
+  return /^(?=.*\d)[a-z0-9._-]{4,30}$/.test(value);
 }
 
 export function parseInitialAuthMode(mode: string | null | undefined): AuthMode {
-  if (mode === "otp" || mode === "recovery" || mode === "new-password") return mode;
+  if (mode === "otp" || mode === "register" || mode === "recovery" || mode === "new-password") {
+    return mode;
+  }
   return "password";
+}
+
+export interface PasswordStrength {
+  score: 0 | 1 | 2 | 3 | 4;
+  label: string;
+  validLength: boolean;
+  hasLettersAndNumbers: boolean;
+  hasSymbolOrCase: boolean;
+}
+
+export function evaluatePasswordStrength(password: string): PasswordStrength {
+  const validLength = password.length >= 8;
+  const hasLettersAndNumbers = /[a-zA-Z]/.test(password) && /\d/.test(password);
+  const hasSymbolOrCase =
+    (/[a-z]/.test(password) && /[A-Z]/.test(password)) || /[^a-zA-Z0-9]/.test(password);
+
+  if (!password) {
+    return {
+      score: 0,
+      label: "Minimal 8 karakter",
+      validLength: false,
+      hasLettersAndNumbers: false,
+      hasSymbolOrCase: false,
+    };
+  }
+  if (!validLength) {
+    return {
+      score: 1,
+      label: "Terlalu pendek",
+      validLength,
+      hasLettersAndNumbers,
+      hasSymbolOrCase,
+    };
+  }
+  const bonus =
+    (hasLettersAndNumbers ? 1 : 0) +
+    (hasSymbolOrCase ? 1 : 0) +
+    (password.length >= 12 ? 1 : 0);
+
+  if (bonus >= 3) {
+    return {
+      score: 4,
+      label: "Sangat kuat",
+      validLength,
+      hasLettersAndNumbers,
+      hasSymbolOrCase,
+    };
+  }
+  if (bonus === 2) {
+    return {
+      score: 3,
+      label: "Kuat",
+      validLength,
+      hasLettersAndNumbers,
+      hasSymbolOrCase,
+    };
+  }
+  return {
+    score: 2,
+    label: "Cukup",
+    validLength,
+    hasLettersAndNumbers,
+    hasSymbolOrCase,
+  };
 }

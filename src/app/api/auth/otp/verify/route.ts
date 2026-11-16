@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { adminClient } from "@/lib/supabase/admin";
 import { apiError } from "@/lib/api";
 import { boundedJson } from "@/lib/security/api-session";
 import { sameRegisteredEmail, verifiedUserEmail } from "@/lib/security/identity";
-import { isValidIdentifier } from "@/lib/auth-helpers";
 import {
   AuthThrottleError,
   clearAuthThrottle,
   clientIp,
   consumeAuthThrottle,
+  elevateMfaIfRequired,
   resolveActiveProfileByIdentifier,
 } from "@/lib/security/auth-flow";
 
@@ -20,47 +19,22 @@ export const runtime = "nodejs";
 const verifySchema = z.discriminatedUnion("purpose", [
   z.object({
     purpose: z.literal("login"),
-    identifier: z.string().trim().min(4).max(150),
+    email: z.email("Masukkan alamat email yang valid (contoh: nama@gmail.com).").max(150),
     token: z.string().trim().regex(/^[0-9]{6,10}$/, "Kode OTP harus 6–10 digit angka."),
   }),
   z.object({
     purpose: z.literal("recovery"),
-    identifier: z.string().trim().min(4).max(150),
+    email: z.email("Masukkan alamat email yang valid (contoh: nama@gmail.com).").max(150),
     token: z.string().trim().regex(/^[0-9]{6,10}$/, "Kode OTP harus 6–10 digit angka."),
-    password: z.string().min(12, "Kata sandi minimal 12 karakter.").max(128),
+    password: z.string().min(8, "Kata sandi minimal 8 karakter.").max(128),
     totpCode: z.string().trim().regex(/^[0-9]{6}$/).optional(),
   }),
   z.object({
     purpose: z.literal("complete-recovery"),
-    password: z.string().min(12, "Kata sandi minimal 12 karakter.").max(128),
+    password: z.string().min(8, "Kata sandi minimal 8 karakter.").max(128),
     totpCode: z.string().trim().regex(/^[0-9]{6}$/).optional(),
   }),
 ]);
-
-async function elevateMfaIfRequired(db: SupabaseClient, totpCode?: string) {
-  const { data: aal, error: aalError } = await db.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (aalError) throw aalError;
-  if (aal?.nextLevel !== "aal2" || aal.currentLevel === "aal2") return true;
-  if (!totpCode) return false;
-
-  const { data: factors, error: factorError } = await db.auth.mfa.listFactors();
-  if (factorError) throw factorError;
-  const verifiedFactor = factors?.totp?.find((f) => f.status === "verified");
-  if (!verifiedFactor) throw new Error("Faktor autentikator tidak ditemukan.");
-
-  const { data: challenge, error: challengeError } = await db.auth.mfa.challenge({
-    factorId: verifiedFactor.id,
-  });
-  if (challengeError) throw challengeError;
-
-  const { error: verifyError } = await db.auth.mfa.verify({
-    factorId: verifiedFactor.id,
-    challengeId: challenge.id,
-    code: totpCode,
-  });
-  if (verifyError) throw new Error("Kode Authenticator (TOTP) tidak valid.");
-  return true;
-}
 
 export async function POST(req: Request) {
   try {
@@ -99,6 +73,10 @@ export async function POST(req: Request) {
       const { error: updateError } = await db.auth.updateUser({ password: body.password });
       if (updateError) return apiError(updateError, 400);
 
+      await admin
+        .from("profiles")
+        .update({ must_change_password: false, updated_at: new Date().toISOString() })
+        .eq("id", profile.id);
       await admin.from("audit_logs").insert({
         actor_id: profile.id,
         action: "PASSWORD_RESET",
@@ -112,11 +90,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    if (!isValidIdentifier(body.identifier)) {
-      return apiError(new Error("Email atau nomor induk tidak valid."), 400);
-    }
-
-    const identifier = body.identifier.trim().toLowerCase();
+    const identifier = body.email.trim().toLowerCase();
     const hashes = await consumeAuthThrottle(admin, [
       `otp-verify:${body.purpose}:${identifier}`,
       `otp-verify:ip:${ip}`,
@@ -158,7 +132,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, role: profile.role });
     }
 
-    // Recovery flow: if account has TOTP MFA enrolled, require TOTP elevation before password change.
     const ready = await elevateMfaIfRequired(db, body.totpCode);
     if (!ready) {
       await clearAuthThrottle(admin, hashes);
@@ -173,6 +146,10 @@ export async function POST(req: Request) {
     const { error: updateError } = await db.auth.updateUser({ password: body.password });
     if (updateError) return apiError(updateError, 400);
 
+    await admin
+      .from("profiles")
+      .update({ must_change_password: false, updated_at: new Date().toISOString() })
+      .eq("id", profile.id);
     await admin.from("audit_logs").insert({
       actor_id: profile.id,
       action: "PASSWORD_RESET",

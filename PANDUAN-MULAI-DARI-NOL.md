@@ -50,16 +50,18 @@ Di dashboard Supabase → **SQL Editor**, jalankan file dalam urutan berikut, sa
 3. `supabase/seed.sql` (hanya database baru)
 4. `supabase/migrations/003_identity_profiles.sql` (memperbarui NIDN Ibu Dian)
 5. `supabase/migrations/004_google_signup_allowlist.sql` (mengunci pendaftaran akun Google baru)
+6. `supabase/migrations/005_meeting_references_and_password_policy.sql` (referensi jurnal pertemuan + tanda wajib ganti sandi awal)
+7. `supabase/migrations/006_self_registration_otps.sql` (pendaftaran mandiri mahasiswa dengan OTP email)
 
-**Urutan terbaik untuk database baru:** `001 → 002 → seed → 003 → 004`. Untuk database v2.1 yang sudah ada, jalankan **003 kemudian 004**; jangan ulangi `001` dan `002` sembarangan. Simpan cadangan database lebih dahulu.
+**Urutan terbaik untuk database baru:** `001 → 002 → seed → 003 → 004 → 005 → 006`. Untuk database v2.1 yang sudah ada, jalankan **003 → 004 → 005 → 006** secara berurutan; jangan ulangi `001` dan `002` sembarangan. Simpan cadangan database lebih dahulu.
 
 **Sesudah menjalankan 004:** di dashboard Supabase → **Authentication → Hooks → Before User Created**, pilih **Postgres Function** `public.hook_campus_invite_only` dan aktifkan. Lakukan **setelah akun Super Admin pertama disiapkan**. Hook ini mencegah pembuatan user Google baru di luar sistem undangan, sehingga akun Google hanya dapat dihubungkan ke akun kampus yang sudah ada.
 
 Foto BAP berada di Storage bucket privat `bap-documents`. File tugas juga privat. Migrasi 003 menambah bucket foto profil privat.
 
-## 5. Google login (satu email = satu identitas kampus)
+## 5. Google login (Client ID Google + satu email = satu identitas kampus)
 
-Buka **Google Cloud Console → Credentials**. Buat **OAuth client ID (Web application)**. Tambahkan redirect yang diberikan Supabase di **Authentication → Providers → Google**. Salin Google Client ID/Secret langsung ke dashboard **Supabase → Authentication → Providers → Google**. **Jangan taruh Google Client Secret di repository.**
+Buka **Google Cloud Console → Credentials**. Buat **OAuth client ID (Web application)**. Tambahkan **Authorized JavaScript origins** (`https://hananuttt.my.id`, `http://localhost:3000`) dan **Authorized redirect URIs** yang diberikan Supabase (`https://<project-ref>.supabase.co/auth/v1/callback`). Salin Google Client ID ke `NEXT_PUBLIC_GOOGLE_CLIENT_ID` di `.env.local` / Vercel, lalu masukkan Google Client ID & Secret pada **Supabase → Authentication → Providers → Google**. **Jangan taruh Google Client Secret di repository.**
 
 Di Supabase **Authentication → URL Configuration**, atur Site URL dan Redirect URLs sesuai alamat website Anda. Masukkan alamat lokal `http://localhost:3000/api/auth/callback` dan nanti domain Vercel Anda. Aktifkan **manual identity linking** bila ingin tombol Hubungkan Google di halaman keamanan.
 
@@ -83,12 +85,17 @@ Aktifkan SMTP sendiri pada **Authentication → SMTP Settings** agar email betul
 
 Jangan buat password dosen yang sama untuk semua orang. Super Admin membuka **Pengguna → Tambah Pengguna** dan mengisi email kampus, nama, NIDN, role Dosen. Sistem mengirim undangan dan dosen membuat password sendiri.
 
-- Ibu **Dian Novianti**: nomor login sesuai permintaan terbaru **`0421117105`**.
-- Dosen lain memakai nomor induk masing-masing dari daftar kampus, tetapi **harus punya email nyata**.
-- Mahasiswa menggunakan email terdaftar atau Google dengan email yang sama.
-- Admin dan Super Admin memakai email + password + MFA TOTP.
+- **Kana Nurhana (Mahasiswa):** login memakai NIM **`240511088`** dan kata sandi awal **`240511088`**.
+- **Dosen (termasuk Ibu Dian Novianti `0421117105` & Muhamad Imam `0413088807`):** login awal memakai NIDN dan kata sandi awal sama dengan NIDN, lalu ubah kata sandi (min. 8 karakter) di dashboard dosen dan tambahkan email Gmail pribadi via OTP di **Pengaturan**.
+- **Admin (`ADMIN-001`) & Super Admin (`SYS-001`):** dibuat otomatis dari `.env.local` memakai perintah di bawah (lalu wajib mengaktifkan Authenticator TOTP saat login pertama).
 
-**Akun Super Admin pertama:** perlu dibuat secara aman oleh operator database di Supabase Auth lalu dilengkapi satu record `profiles` dengan ID yang sama. Jangan menyediakan akun admin publik dengan password contoh. Setelah login, aktifkan MFA.
+Jalankan sekali di terminal lokal sesudah migrasi `001 → 002 → seed → 003 → 004 → 005` selesai:
+
+```bash
+npm run provision:roles
+```
+
+Perintah tersebut akan membuat akun Kana Nurhana (`240511088`), seluruh dosen dari tabel `lecturer_directory`, `ADMIN-001`, dan `SYS-001` (meminta email & password Admin/Super Admin secara interaktif agar tidak ada sandi admin yang tertulis di Git).
 
 ## 8. Jalankan dan coba
 

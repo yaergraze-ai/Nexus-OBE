@@ -57,7 +57,11 @@ export async function RoleDashboard({role}:{role:Role}){
   insights.push({label:"Kelas Terpantau",value:classes.length,description:"Operasional akademik",href:"/jadwal",icon:"calendar3"});
   insights.push({label:"Total Tugas",value:tasks?.length??0,description:"Kontrol operasional tugas",href:"/tugas",icon:"clipboard2-data"});
  }
- const {data:liveRows}=await db.from("meetings").select("*").eq("status","LIVE").gt("ends_at",new Date().toISOString()).limit(20);
+ const [{data:liveRows},{data:aal}]=await Promise.all([
+  db.from("meetings").select("*").eq("status","LIVE").gt("ends_at",new Date().toISOString()).limit(20),
+  db.auth.mfa.getAuthenticatorAssuranceLevel()
+ ]);
  return <Dashboard profile={profile} classes={classes} notifications={notifications} ips={ips} liveMeetings={liveRows??[]}
- insights={insights} announcements={(announcementRows.data??[]) as unknown as Announcement[]} actualSessions={meetingCount.count??0}/>;
+ insights={insights} announcements={(announcementRows.data??[]) as unknown as Announcement[]} actualSessions={meetingCount.count??0}
+ mustChangePassword={Boolean(profile.must_change_password)} needsMfa={profile.role!=="mahasiswa"&&aal?.currentLevel!=="aal2"}/>;
 }

@@ -2,18 +2,20 @@ import Link from "next/link";
 import type {AcademicClass,Notification,Profile} from "@/types/domain";
 import {Metric,Tag,Progress} from "@/components/UI";
 import {NextClassCountdown} from "@/components/NextClassCountdown";
+import {LecturerPasswordCard} from "@/components/LecturerPasswordCard";
 import type {Meeting} from "@/types/domain";
 import type {Announcement} from "@/types/coursework";
 export interface DashboardInsight {label:string;value:number|string;description:string;href:string;icon:string;}
 const dayNames=["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
 function todayWib(){const now=new Date();const day=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Jakarta",weekday:"long"}).format(now);return ({Sunday:"Minggu",Monday:"Senin",Tuesday:"Selasa",Wednesday:"Rabu",Thursday:"Kamis",Friday:"Jumat",Saturday:"Sabtu"} as Record<string,string>)[day]||dayNames[now.getDay()];}
-export function Dashboard({profile,classes,notifications=[],preview=false,onClass,ips,liveMeetings=[],insights=[],announcements=[],actualSessions}:{profile:Profile;classes:AcademicClass[];notifications?:Notification[];preview?:boolean;onClass?:(id:string)=>void;ips?:number|null;liveMeetings?:Meeting[];insights?:DashboardInsight[];announcements?:Announcement[];actualSessions?:number}){
+export function Dashboard({profile,classes,notifications=[],preview=false,onClass,ips,liveMeetings=[],insights=[],announcements=[],actualSessions,mustChangePassword=false,needsMfa=false}:{profile:Profile;classes:AcademicClass[];notifications?:Notification[];preview?:boolean;onClass?:(id:string)=>void;ips?:number|null;liveMeetings?:Meeting[];insights?:DashboardInsight[];announcements?:Announcement[];actualSessions?:number;mustChangePassword?:boolean;needsMfa?:boolean}){
  const todays=classes.filter(c=>c.schedule_day===todayWib()).sort((a,b)=>a.start_time.localeCompare(b.start_time));
  const validated=classes.filter(c=>c.rps_validated_kaprodi&&c.rps_validated_dekan).length;
  const sessions=actualSessions??classes.reduce((s,c)=>s+c.initial_meeting_count,0);
  const totalSks=classes.reduce((s,c)=>s+c.courses.sks_total,0);
  return <>
  <div className="sectionhead"><div><span className="kicker"><i className="bi bi-stars"/>OVERVIEW AKADEMIK</span><h1>Dashboard {profile.role==="super_admin"?"Super Admin":profile.role==="admin"?"Admin":profile.role==="dosen"?"Dosen":"Mahasiswa"}</h1><p>Semester Ganjil · Tahun Akademik 2026/2027</p></div><Tag kind="neutral"><i className="bi bi-calendar3"/> TA 2026/2027</Tag></div>
+ {!preview&&profile.role==="dosen"&&mustChangePassword&&<div style={{marginBottom:20}}><LecturerPasswordCard identityNumber={profile.identity_number} needsMfa={needsMfa}/></div>}
  {liveMeetings.length>0&&<div className="notice" style={{marginBottom:18,background:"#fff0f0",borderColor:"#f5caca"}}><i className="bi bi-broadcast"/><div><strong>SESI LIVE — Kelas sedang berlangsung</strong><p>{liveMeetings.length} sesi terbuka. Buka detail kelas untuk presensi mandiri.</p></div></div>}
  <section className="hero"><div className="hero-copy"><span className="hero-brow">NEXUS OBE · AKADEMIK TERPADU</span><h1>Selamat datang, {profile.full_name.split(" ")[0]}! <span style={{fontWeight:450}}>👋</span></h1><p>{profile.role==="mahasiswa"?"Kelola aktivitas kuliah, pantau presensi langsung, dan ikuti capaian pembelajaran dalam satu tempat.":profile.role==="dosen"?"Pantau kelas yang diampu, buka pertemuan secara langsung, dan kelola hasil belajar mahasiswa.":"Pantau jalannya semester, validasi kurikulum, dan pastikan setiap kelas berjalan sesuai standar OBE."}</p></div><div className="hero-decor"><i className="bi bi-mortarboard-fill"/></div></section>
  <div style={{margin:"-11px 0 19px",padding:"11px 16px",border:"1px solid var(--line)",borderRadius:10,background:"white"}}><NextClassCountdown classes={classes}/></div>

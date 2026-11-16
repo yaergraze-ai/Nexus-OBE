@@ -5,6 +5,7 @@ import { adminClient } from "@/lib/supabase/admin";
 import { apiError } from "@/lib/api";
 import { boundedJson } from "@/lib/security/api-session";
 import { sameRegisteredEmail, verifiedUserEmail } from "@/lib/security/identity";
+import { isValidIdentifier } from "@/lib/auth-helpers";
 import {
   AuthThrottleError,
   clearAuthThrottle,
@@ -23,9 +24,9 @@ const credentials = z.object({
 export async function POST(req: Request) {
   try {
     const body = credentials.parse(await boundedJson(req, 4000));
-    const identifier = body.identifier.toLowerCase();
-    if (!identifier.includes("@") && !/^[0-9]{6,30}$/.test(identifier)) {
-      return apiError(new Error("Gunakan email atau nomor induk yang valid."), 400);
+    const identifier = body.identifier.trim().toLowerCase();
+    if (!isValidIdentifier(identifier)) {
+      return apiError(new Error("Gunakan NIM, NIDN, atau email yang valid."), 400);
     }
 
     const ip = clientIp(req);
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
         metadata: { account_bucket: hashes[0].slice(0, 16) },
         ip_address: ip,
       });
-      return apiError(new Error("Nomor induk/email atau kata sandi tidak valid."), 401);
+      return apiError(new Error("NIM/NIDN/email atau kata sandi tidak valid."), 401);
     }
 
     const {
@@ -65,13 +66,25 @@ export async function POST(req: Request) {
     if (
       !profile?.is_active ||
       !sameRegisteredEmail(user ? verifiedUserEmail(user) : null, profile.email) ||
-      (!identifier.includes("@") && profile.identity_number !== identifier)
+      (!identifier.includes("@") &&
+        profile.identity_number.trim().toLowerCase() !== identifier)
     ) {
       await db.auth.signOut();
       return apiError(
         new Error("Akun belum disetujui atau email tidak cocok dengan identitas kampus."),
         403
       );
+    }
+
+    // Detect initial lecturer password equal to NIDN so the lecturer dashboard prompts password update.
+    if (
+      profile.role === "dosen" &&
+      body.password.trim().toLowerCase() === profile.identity_number.trim().toLowerCase()
+    ) {
+      await admin
+        .from("profiles")
+        .update({ must_change_password: true })
+        .eq("id", profile.id);
     }
 
     await clearAuthThrottle(admin, hashes);

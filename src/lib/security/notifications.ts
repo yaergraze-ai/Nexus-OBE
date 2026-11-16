@@ -1,6 +1,7 @@
 import "server-only";
 import webPush from "web-push";
 import {adminClient} from "@/lib/supabase/admin";
+import {isCustomMailerConfigured,sendPortalEmail} from "@/lib/security/mailer";
 import type {AcademicClass} from "@/types/domain";
 function vapidReady(){return Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY&&process.env.VAPID_SUBJECT);}
 export async function classRecipientIds(classId:string):Promise<string[]>{
@@ -25,10 +26,10 @@ export async function deliver(ids:string[],payload:{title:string;body:string;cat
    catch(e){const status=(e as {statusCode?:number}).statusCode;if(status===404||status===410)await admin.from("push_subscriptions").delete().eq("id",sub.id);}
   }));
  }
- if(email&&process.env.RESEND_API_KEY&&process.env.RESEND_FROM_EMAIL){
+ if(email&&isCustomMailerConfigured()){
   const {data:profiles}=await admin.from("profiles").select("email").in("id",unique).eq("is_active",true);
   for(const p of profiles??[]){
-   try{await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.RESEND_FROM_EMAIL,to:[p.email],subject:payload.title,text:`${payload.body}\n\nBuka portal akademik untuk detail.`})});}catch{/* email opsional, notifikasi in-app sudah tersimpan */}
+   try{await sendPortalEmail({to:p.email,subject:payload.title,text:`${payload.body}\n\nBuka portal akademik untuk detail.`});}catch{/* email opsional, notifikasi in-app sudah tersimpan */}
   }
  }
 }

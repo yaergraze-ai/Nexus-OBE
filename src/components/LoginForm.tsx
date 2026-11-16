@@ -1,27 +1,56 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AnimatePresence,
   LazyMotion,
   domAnimation,
   m,
-  useReducedMotion,
 } from "framer-motion";
 import { browserClient } from "@/lib/supabase/browser";
-import {
-  cleanOtpToken,
-  isValidIdentifier,
-  isValidOtpToken,
-  type AuthMode,
-} from "@/lib/auth-helpers";
+import { cleanOtpToken, isValidOtpToken, type AuthMode } from "@/lib/auth-helpers";
+import { useDeviceAdaptive } from "@/hooks/useDeviceAdaptive";
+import { PasswordStrengthInput } from "@/components/PasswordStrengthInput";
 
 interface LoginFormProps {
   initialMode?: AuthMode;
   initialError?: string;
 }
 
+interface GoogleCredentialResponse {
+  credential?: string;
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (cfg: {
+            client_id: string;
+            nonce?: string;
+            callback: (res: GoogleCredentialResponse) => void;
+            auto_select?: boolean;
+          }) => void;
+          renderButton: (
+            el: HTMLElement,
+            options: {
+              theme?: "outline" | "filled_blue" | "filled_black";
+              size?: "large" | "medium" | "small";
+              shape?: "rectangular" | "pill" | "circle" | "square";
+              text?: "signin_with" | "signup_with" | "continue_with" | "signin";
+              width?: number;
+              locale?: string;
+            }
+          ) => void;
+        };
+      };
+    };
+  }
+}
+
 const EASE = [0.22, 1, 0.36, 1] as const;
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim() || "";
 
 function GoogleMark() {
   return (
@@ -46,17 +75,37 @@ function GoogleMark() {
   );
 }
 
+async function createNoncePair(): Promise<{ raw: string; hashed: string }> {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  const raw = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = await window.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(raw)
+  );
+  const hashed = Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
+  return { raw, hashed };
+}
+
 export function LoginForm({
   initialMode = "password",
   initialError = "",
 }: LoginFormProps) {
-  const reduced = useReducedMotion();
+  const { device, reducedMotion } = useDeviceAdaptive();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [otpRequested, setOtpRequested] = useState(false);
+  const [registerRequested, setRegisterRequested] = useState(false);
   const [recoveryStep, setRecoveryStep] = useState<"request" | "verify" | "mfa" | "done">(
     initialMode === "new-password" ? "mfa" : "request"
   );
+
   const [identifier, setIdentifier] = useState("");
+  const [otpEmail, setOtpEmail] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regNim, setRegNim] = useState("");
+  const [regPassword, setRegPassword] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -65,12 +114,15 @@ export function LoginForm({
   const [requiresMfa, setRequiresMfa] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  const [gisReady, setGisReady] = useState(false);
+
   const alertRef = useRef<HTMLDivElement>(null);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+  const nonceRef = useRef<string>("");
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -82,7 +134,102 @@ export function LoginForm({
     if (error) alertRef.current?.focus();
   }, [error]);
 
+  const handleGoogleCredential = useCallback(async (res: GoogleCredentialResponse) => {
+    if (!res.credential) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          credential: res.credential,
+          ...(nonceRef.current ? { nonce: nonceRef.current } : {}),
+        }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Masuk dengan Google gagal.");
+      window.location.assign("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Masuk dengan Google gagal.");
+      setBusy(false);
+    }
+  }, []);
+
+  const showGoogleSection = mode === "password" || mode === "otp" || mode === "register";
+  const showMainTabs = showGoogleSection;
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !showGoogleSection) return;
+    let cancelled = false;
+
+    const renderGis = async () => {
+      const g = window.google?.accounts?.id;
+      const host = googleBtnRef.current;
+      if (!g || !host || cancelled) return;
+      const { raw, hashed } = await createNoncePair();
+      if (cancelled) return;
+      nonceRef.current = raw;
+      g.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        nonce: hashed,
+        callback: (r) => void handleGoogleCredential(r),
+      });
+      host.innerHTML = "";
+      const targetWidth = Math.max(240, Math.min(380, Math.floor(host.clientWidth || 340)));
+      g.renderButton(host, {
+        theme: "outline",
+        size: "large",
+        shape: "rectangular",
+        text: "continue_with",
+        width: targetWidth,
+        locale: "id",
+      });
+      setGisReady(true);
+    };
+
+    if (window.google?.accounts?.id) {
+      void renderGis();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://accounts.google.com/gsi/client"]'
+    );
+    if (existing) {
+      existing.addEventListener("load", () => void renderGis(), { once: true });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => void renderGis();
+    script.onerror = () => setGisReady(false);
+    document.head.appendChild(script);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [handleGoogleCredential, showGoogleSection, device]);
+
   const switchMode = (nextMode: AuthMode) => {
+    if (
+      (nextMode === "otp" || nextMode === "recovery" || nextMode === "register") &&
+      !otpEmail &&
+      identifier.includes("@")
+    ) {
+      setOtpEmail(identifier.trim());
+    }
+    if (nextMode === "password" && !identifier && otpEmail) {
+      setIdentifier(otpEmail.trim());
+    }
     setMode(nextMode);
     setError("");
     setNotice("");
@@ -90,22 +237,26 @@ export function LoginForm({
     setTotpCode("");
     setRequiresMfa(false);
     if (nextMode === "otp") setOtpRequested(false);
+    if (nextMode === "register") setRegisterRequested(false);
     if (nextMode === "recovery") setRecoveryStep("request");
   };
 
   const viewKey =
     mode === "otp"
       ? `otp-${otpRequested ? "verify" : "request"}`
-      : mode === "recovery" || mode === "new-password"
-        ? `${mode}-${recoveryStep}`
-        : "password";
+      : mode === "register"
+        ? `register-${registerRequested ? "verify" : "request"}`
+        : mode === "recovery" || mode === "new-password"
+          ? `${mode}-${recoveryStep}`
+          : "password";
 
-  const motionProps = reduced
+  const slideOffset = device === "mobile" ? 6 : 10;
+  const motionProps = reducedMotion
     ? {}
     : {
-        initial: { opacity: 0, y: 10 },
+        initial: { opacity: 0, y: slideOffset },
         animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: -8 },
+        exit: { opacity: 0, y: -slideOffset },
         transition: { duration: 0.2, ease: EASE },
       };
 
@@ -129,7 +280,7 @@ export function LoginForm({
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleOAuthFallback = async () => {
     setBusy(true);
     setError("");
     setNotice("");
@@ -149,8 +300,9 @@ export function LoginForm({
   };
 
   const sendOtp = async (purpose: "login" | "recovery") => {
-    if (!isValidIdentifier(identifier)) {
-      setError("Masukkan email kampus atau nomor induk dosen/staf yang valid.");
+    const cleanEmail = otpEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setError("Masukkan alamat email yang valid (contoh: nama@gmail.com).");
       return;
     }
     setBusy(true);
@@ -160,7 +312,7 @@ export function LoginForm({
       const response = await fetch("/api/auth/otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, purpose }),
+        body: JSON.stringify({ email: cleanEmail, purpose }),
       });
       const body = (await response.json()) as { error?: string; message?: string };
       if (!response.ok) throw new Error(body.error || "Gagal mengirim kode OTP.");
@@ -190,7 +342,11 @@ export function LoginForm({
       const response = await fetch("/api/auth/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ purpose: "login", identifier, token: otp }),
+        body: JSON.stringify({
+          purpose: "login",
+          email: otpEmail.trim().toLowerCase(),
+          token: otp,
+        }),
       });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(body.error || "Kode OTP tidak valid.");
@@ -201,11 +357,79 @@ export function LoginForm({
     }
   };
 
+  const requestRegisterOtp = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setError("");
+    setNotice("");
+    const cleanEmail = otpEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setError("Masukkan alamat email yang valid (contoh: nama@gmail.com).");
+      return;
+    }
+    if (regPassword.length < 8) {
+      setError("Kata sandi pendaftaran minimal 8 karakter.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "request",
+          fullName: regName,
+          nim: regNim,
+          email: cleanEmail,
+          password: regPassword,
+        }),
+      });
+      const body = (await response.json()) as { error?: string; message?: string };
+      if (!response.ok) throw new Error(body.error || "Gagal mengirim OTP pendaftaran.");
+      setCooldown(60);
+      setRegisterRequested(true);
+      setNotice(body.message || `Kode OTP 6 digit telah dikirim ke ${cleanEmail}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Pendaftaran gagal.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyRegisterOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^[0-9]{6}$/.test(otp.trim())) {
+      setError("Masukkan kode OTP 6 digit dari email Anda.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify",
+          fullName: regName,
+          nim: regNim,
+          email: otpEmail.trim().toLowerCase(),
+          password: regPassword,
+          otp: otp.trim(),
+        }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Kode OTP pendaftaran tidak valid.");
+      window.location.assign("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verifikasi pendaftaran gagal.");
+      setBusy(false);
+    }
+  };
+
   const submitRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (newPassword.length < 12) {
-      setError("Kata sandi baru minimal 12 karakter.");
+    if (newPassword.length < 8) {
+      setError("Kata sandi baru minimal 8 karakter.");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -232,7 +456,7 @@ export function LoginForm({
           }
         : {
             purpose: "recovery",
-            identifier,
+            email: otpEmail.trim().toLowerCase(),
             token: otp,
             password: newPassword,
             ...(totpCode ? { totpCode } : {}),
@@ -278,33 +502,30 @@ export function LoginForm({
     }
   };
 
-  const isLoginMode = mode === "password" || mode === "otp";
-
   const heading =
     mode === "otp"
       ? "Masuk dengan OTP"
-      : mode === "recovery" || mode === "new-password"
-        ? "Atur ulang kata sandi"
-        : "Selamat datang";
+      : mode === "register"
+        ? "Daftar Akun Mahasiswa"
+        : mode === "recovery" || mode === "new-password"
+          ? "Atur ulang kata sandi"
+          : "Selamat datang";
 
   const subtitle =
     mode === "otp"
-      ? "Kode OTP 6 digit dikirim langsung ke email akun yang Anda pakai untuk masuk."
-      : mode === "recovery"
-        ? "Verifikasi email akun Anda dengan OTP lalu buat kata sandi baru tanpa meninggalkan halaman ini."
-        : mode === "new-password"
-          ? "Tautan pemulihan terverifikasi. Buat kata sandi baru untuk akun Anda."
-          : "Mahasiswa masuk dengan email; dosen dan staf dapat menggunakan NIDN/nomor induk atau email.";
+      ? "Masukkan email yang terdaftar pada akun Anda untuk menerima kode OTP 6 digit."
+      : mode === "register"
+        ? "Daftarkan akun mahasiswa baru menggunakan Email, NIM, dan verifikasi OTP email."
+        : mode === "recovery"
+          ? "Masukkan email terdaftar Anda untuk menerima kode OTP pemulihan dan membuat sandi baru."
+          : mode === "new-password"
+            ? "Tautan pemulihan terverifikasi. Buat kata sandi baru minimal 8 karakter."
+            : "Masuk dengan NIM, NIDN, atau email terdaftar — dosen awal memakai NIDN sebagai sandi.";
 
   return (
     <LazyMotion features={domAnimation} strict>
-      <div className="login-page">
-        <m.div
-          className="login-side"
-          initial={reduced ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.35, ease: EASE }}
-        >
+      <div className={`login-page auth-device-${device}`}>
+        <aside className="login-side" aria-label="Identitas Portal NEXUS OBE">
           <div className="brand" style={{ padding: 0, border: 0 }}>
             <div className="brand-mark">N</div>
             <div className="brand-words">
@@ -312,38 +533,47 @@ export function LoginForm({
             </div>
           </div>
 
-          <m.div
-            initial={reduced ? false : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.08, ease: EASE }}
-          >
+          <div className="login-side-copy">
             <span className="hero-brow">FAKULTAS TEKNIK</span>
             <h1>Satu portal untuk seluruh perjalanan akademik.</h1>
             <p>
-              Jadwal, pertemuan, tugas, presensi, evaluasi OBE, dan kabar kelas dalam satu
-              tempat.
+              Jadwal, pertemuan, tugas, presensi, evaluasi OBE, dan kabar kelas dalam
+              satu tempat.
             </p>
-          </m.div>
-
-          <div style={{ fontSize: 11, color: "#e5bdc0" }}>
-            © 2026 NEXUS OBE · Portal Akademik Terintegrasi
           </div>
-        </m.div>
+
+          <div className="login-side-foot">
+            © 2026 NEXUS OBE · Akses akun kampus
+          </div>
+        </aside>
 
         <main className="login-main">
           <m.section
+            layout={!reducedMotion}
             className="auth-card"
             aria-label="Autentikasi Portal NEXUS OBE"
-            initial={reduced ? false : { opacity: 0, y: 16, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.32, ease: EASE }}
+            initial={reducedMotion ? false : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: EASE }}
           >
             <div className="auth-card-top">
-              <div className="kicker" style={{ marginBottom: 6 }}>
-                <i className={`bi ${isLoginMode ? "bi-shield-check" : "bi-key-fill"}`} />
-                {isLoginMode ? "AKUN TERDAFTAR" : "PEMULIHAN AKUN"}
+              <div className="kicker" style={{ marginBottom: 4 }}>
+                <i
+                  className={`bi ${
+                    mode === "register"
+                      ? "bi-person-plus-fill"
+                      : showMainTabs
+                        ? "bi-shield-check"
+                        : "bi-key-fill"
+                  }`}
+                />
+                {mode === "register"
+                  ? "PENDAFTARAN BARU"
+                  : showMainTabs
+                    ? "AKUN TERDAFTAR"
+                    : "PEMULIHAN AKUN"}
               </div>
-              {!isLoginMode && (
+              {!showMainTabs && (
                 <button
                   type="button"
                   className="auth-back"
@@ -357,12 +587,13 @@ export function LoginForm({
             <h2>{heading}</h2>
             <p className="auth-subtitle">{subtitle}</p>
 
-            {isLoginMode && (
-              <div className="auth-tabs" role="tablist" aria-label="Metode masuk">
+            {showMainTabs && (
+              <div className="auth-tabs auth-tabs-3" role="tablist" aria-label="Metode autentikasi">
                 {(
                   [
-                    ["password", "Kata Sandi", "bi-key"],
+                    ["password", "Masuk", "bi-key"],
                     ["otp", "OTP Email", "bi-envelope-check"],
+                    ["register", "Daftar", "bi-person-plus"],
                   ] as const
                 ).map(([key, label, icon]) => {
                   const selected = mode === key;
@@ -377,7 +608,7 @@ export function LoginForm({
                     >
                       {selected && (
                         <m.span
-                          layoutId={reduced ? undefined : "auth-mode-pill"}
+                          layoutId={reducedMotion ? undefined : "auth-mode-pill"}
                           className="auth-tab-pill"
                           transition={{ type: "spring", stiffness: 420, damping: 34 }}
                         />
@@ -400,9 +631,9 @@ export function LoginForm({
                   tabIndex={-1}
                   className="feedback error"
                   role="alert"
-                  initial={reduced ? false : { opacity: 0, y: -6 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={reduced ? undefined : { opacity: 0, y: -4 }}
+                  exit={reducedMotion ? undefined : { opacity: 0, y: -4 }}
                   transition={{ duration: 0.18 }}
                 >
                   <i className="bi bi-exclamation-circle-fill" aria-hidden="true" />{" "}
@@ -414,9 +645,9 @@ export function LoginForm({
                   key="auth-notice"
                   className="feedback"
                   role="status"
-                  initial={reduced ? false : { opacity: 0, y: -6 }}
+                  initial={reducedMotion ? false : { opacity: 0, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={reduced ? undefined : { opacity: 0, y: -4 }}
+                  exit={reducedMotion ? undefined : { opacity: 0, y: -4 }}
                   transition={{ duration: 0.18 }}
                 >
                   <i className="bi bi-check-circle-fill" aria-hidden="true" />{" "}
@@ -434,17 +665,20 @@ export function LoginForm({
                   {...motionProps}
                 >
                   <div className="field">
-                    <label htmlFor="auth-identifier">Email atau nomor induk dosen/staf</label>
-                    <input
-                      id="auth-identifier"
-                      className="input"
-                      type="text"
-                      placeholder="nama@hananuttt.my.id / 0421117105"
-                      autoComplete="username"
-                      required
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                    />
+                    <label htmlFor="auth-identifier">NIM, NIDN, atau Email</label>
+                    <div className="input-icon-wrap">
+                      <i className="bi bi-person-badge input-lead-icon" aria-hidden="true" />
+                      <input
+                        id="auth-identifier"
+                        className="input input-with-lead"
+                        type="text"
+                        placeholder="240511088 / 0421117105 / nama@gmail.com"
+                        autoComplete="username"
+                        required
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
+                      />
+                    </div>
                   </div>
 
                   <div className="field">
@@ -458,11 +692,13 @@ export function LoginForm({
                         Lupa kata sandi?
                       </button>
                     </div>
-                    <div className="pw-wrap">
+                    <div className="pw-wrap input-icon-wrap">
+                      <i className="bi bi-lock input-lead-icon" aria-hidden="true" />
                       <input
                         id="auth-password"
-                        className="input pw-input"
+                        className="input input-with-lead pw-input"
                         type={showPassword ? "text" : "password"}
+                        placeholder="Masukkan kata sandi"
                         autoComplete="current-password"
                         required
                         value={password}
@@ -483,7 +719,7 @@ export function LoginForm({
                     type="submit"
                     className="btn btn-primary btn-full auth-submit"
                     disabled={busy}
-                    whileTap={reduced || busy ? undefined : { scale: 0.985 }}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
                   >
                     {busy ? "Memproses..." : "Masuk"}
                     <i className="bi bi-arrow-right" aria-hidden="true" />
@@ -502,19 +738,23 @@ export function LoginForm({
                   {...motionProps}
                 >
                   <div className="field">
-                    <label htmlFor="otp-identifier">Email terdaftar atau NIDN dosen/staf</label>
-                    <input
-                      id="otp-identifier"
-                      className="input"
-                      type="text"
-                      placeholder="nama@hananuttt.my.id / 0421117105"
-                      autoComplete="username"
-                      required
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                    />
+                    <label htmlFor="otp-email">Email terdaftar</label>
+                    <div className="input-icon-wrap">
+                      <i className="bi bi-envelope-at input-lead-icon" aria-hidden="true" />
+                      <input
+                        id="otp-email"
+                        className="input input-with-lead"
+                        type="email"
+                        placeholder="nama@gmail.com"
+                        autoComplete="email"
+                        required
+                        value={otpEmail}
+                        onChange={(e) => setOtpEmail(e.target.value)}
+                      />
+                    </div>
                     <span className="field-hint">
-                      OTP hanya dikirim ke email resmi yang terdaftar pada akun tersebut.
+                      Dosen yang masuk pertama kali pakai NIDN dapat menambahkan email
+                      pribadi di menu Pengaturan terlebih dahulu.
                     </span>
                   </div>
 
@@ -522,7 +762,7 @@ export function LoginForm({
                     type="submit"
                     className="btn btn-primary btn-full auth-submit"
                     disabled={busy}
-                    whileTap={reduced || busy ? undefined : { scale: 0.985 }}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
                   >
                     {busy ? "Mengirim OTP..." : "Kirim Kode OTP ke Email"}
                     <i className="bi bi-send" aria-hidden="true" />
@@ -552,8 +792,8 @@ export function LoginForm({
                       onChange={(e) => setOtp(cleanOtpToken(e.target.value))}
                     />
                     <span className="field-hint">
-                      Masukkan kode 6–8 digit yang masuk ke email akun{" "}
-                      <strong>{identifier.includes("@") ? identifier : "terdaftar"}</strong>.
+                      Periksa email <strong>{otpEmail.trim().toLowerCase()}</strong>{" "}
+                      (termasuk folder spam).
                     </span>
                   </div>
 
@@ -561,7 +801,7 @@ export function LoginForm({
                     type="submit"
                     className="btn btn-primary btn-full auth-submit"
                     disabled={busy}
-                    whileTap={reduced || busy ? undefined : { scale: 0.985 }}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
                   >
                     {busy ? "Memverifikasi..." : "Verifikasi OTP & Masuk"}
                     <i className="bi bi-shield-check" aria-hidden="true" />
@@ -586,7 +826,150 @@ export function LoginForm({
                         setError("");
                       }}
                     >
-                      Ganti email / NIDN
+                      Ganti alamat email
+                    </button>
+                  </div>
+                </m.form>
+              )}
+
+              {mode === "register" && !registerRequested && (
+                <m.form
+                  key={viewKey}
+                  onSubmit={(e) => void requestRegisterOtp(e)}
+                  className="auth-form-body"
+                  {...motionProps}
+                >
+                  <div className="field">
+                    <label htmlFor="reg-fullname">Nama lengkap</label>
+                    <div className="input-icon-wrap">
+                      <i className="bi bi-person input-lead-icon" aria-hidden="true" />
+                      <input
+                        id="reg-fullname"
+                        className="input input-with-lead"
+                        type="text"
+                        placeholder="Nama lengkap sesuai data kampus"
+                        autoComplete="name"
+                        minLength={3}
+                        maxLength={150}
+                        required
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="reg-nim">NIM Mahasiswa</label>
+                    <div className="input-icon-wrap">
+                      <i className="bi bi-card-heading input-lead-icon" aria-hidden="true" />
+                      <input
+                        id="reg-nim"
+                        className="input input-with-lead"
+                        type="text"
+                        placeholder="Contoh: 240511088"
+                        minLength={4}
+                        maxLength={30}
+                        required
+                        value={regNim}
+                        onChange={(e) => setRegNim(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="reg-email">Email pribadi / Gmail</label>
+                    <div className="input-icon-wrap">
+                      <i className="bi bi-envelope-at input-lead-icon" aria-hidden="true" />
+                      <input
+                        id="reg-email"
+                        className="input input-with-lead"
+                        type="email"
+                        placeholder="nama@gmail.com"
+                        autoComplete="email"
+                        required
+                        value={otpEmail}
+                        onChange={(e) => setOtpEmail(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <PasswordStrengthInput
+                    id="reg-password"
+                    label="Buat kata sandi (minimal 8 karakter)"
+                    value={regPassword}
+                    onChange={setRegPassword}
+                  />
+
+                  <m.button
+                    type="submit"
+                    className="btn btn-primary btn-full auth-submit"
+                    disabled={busy}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
+                  >
+                    {busy ? "Mengirim OTP..." : "Kirim OTP Pendaftaran ke Email"}
+                    <i className="bi bi-envelope-check" aria-hidden="true" />
+                  </m.button>
+                </m.form>
+              )}
+
+              {mode === "register" && registerRequested && (
+                <m.form
+                  key={viewKey}
+                  onSubmit={verifyRegisterOtp}
+                  className="auth-form-body"
+                  {...motionProps}
+                >
+                  <div className="field">
+                    <label htmlFor="reg-otp-code">Kode OTP 6 digit dari email</label>
+                    <input
+                      id="reg-otp-code"
+                      className="input otp-input"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="123456"
+                      minLength={6}
+                      maxLength={6}
+                      required
+                      value={otp}
+                      onChange={(e) => setOtp(cleanOtpToken(e.target.value).slice(0, 6))}
+                    />
+                    <span className="field-hint">
+                      Masukkan kode OTP yang dikirim ke{" "}
+                      <strong>{otpEmail.trim().toLowerCase()}</strong> untuk NIM{" "}
+                      <strong>{regNim.trim()}</strong>.
+                    </span>
+                  </div>
+
+                  <m.button
+                    type="submit"
+                    className="btn btn-primary btn-full auth-submit"
+                    disabled={busy}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
+                  >
+                    {busy ? "Mengaktifkan akun..." : "Verifikasi OTP & Selesaikan Daftar"}
+                    <i className="bi bi-check2-circle" aria-hidden="true" />
+                  </m.button>
+
+                  <div className="auth-subactions">
+                    <button
+                      type="button"
+                      className="auth-inline-link"
+                      disabled={busy || cooldown > 0}
+                      onClick={() => void requestRegisterOtp()}
+                    >
+                      {cooldown > 0 ? `Kirim ulang (${cooldown}d)` : "Kirim ulang kode OTP"}
+                    </button>
+                    <button
+                      type="button"
+                      className="auth-inline-link muted"
+                      disabled={busy}
+                      onClick={() => {
+                        setRegisterRequested(false);
+                        setOtp("");
+                        setError("");
+                      }}
+                    >
+                      Ubah data pendaftaran
                     </button>
                   </div>
                 </m.form>
@@ -603,24 +986,27 @@ export function LoginForm({
                   {...motionProps}
                 >
                   <div className="field">
-                    <label htmlFor="recovery-identifier">Email terdaftar atau NIDN dosen/staf</label>
-                    <input
-                      id="recovery-identifier"
-                      className="input"
-                      type="text"
-                      placeholder="nama@hananuttt.my.id / 0421117105"
-                      autoComplete="email"
-                      required
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                    />
+                    <label htmlFor="recovery-email">Email terdaftar</label>
+                    <div className="input-icon-wrap">
+                      <i className="bi bi-envelope-at input-lead-icon" aria-hidden="true" />
+                      <input
+                        id="recovery-email"
+                        className="input input-with-lead"
+                        type="email"
+                        placeholder="nama@gmail.com"
+                        autoComplete="email"
+                        required
+                        value={otpEmail}
+                        onChange={(e) => setOtpEmail(e.target.value)}
+                      />
+                    </div>
                   </div>
 
                   <m.button
                     type="submit"
                     className="btn btn-primary btn-full auth-submit"
                     disabled={busy}
-                    whileTap={reduced || busy ? undefined : { scale: 0.985 }}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
                   >
                     {busy ? "Mengirim OTP..." : "Kirim OTP Pemulihan"}
                     <i className="bi bi-envelope-arrow-up" aria-hidden="true" />
@@ -654,46 +1040,21 @@ export function LoginForm({
                       </div>
                     )}
 
-                    <div className="field">
-                      <label htmlFor="recovery-new-password">
-                        Kata sandi baru (minimal 12 karakter)
-                      </label>
-                      <div className="pw-wrap">
-                        <input
-                          id="recovery-new-password"
-                          className="input pw-input"
-                          type={showNewPassword ? "text" : "password"}
-                          autoComplete="new-password"
-                          minLength={12}
-                          maxLength={128}
-                          required
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="pw-toggle"
-                          onClick={() => setShowNewPassword((v) => !v)}
-                          aria-label={
-                            showNewPassword ? "Sembunyikan sandi" : "Tampilkan sandi"
-                          }
-                        >
-                          <i className={`bi bi-eye${showNewPassword ? "-slash" : ""}`} />
-                        </button>
-                      </div>
-                      <span className="field-hint">
-                        Panjang saat ini: {newPassword.length}/12+ karakter
-                      </span>
-                    </div>
+                    <PasswordStrengthInput
+                      id="recovery-new-password"
+                      label="Kata sandi baru (minimal 8 karakter)"
+                      value={newPassword}
+                      onChange={setNewPassword}
+                    />
 
                     <div className="field">
                       <label htmlFor="recovery-confirm-password">Ulangi kata sandi baru</label>
                       <input
                         id="recovery-confirm-password"
                         className="input"
-                        type={showNewPassword ? "text" : "password"}
+                        type="password"
                         autoComplete="new-password"
-                        minLength={12}
+                        minLength={8}
                         maxLength={128}
                         required
                         value={confirmPassword}
@@ -724,7 +1085,7 @@ export function LoginForm({
                       type="submit"
                       className="btn btn-primary btn-full auth-submit"
                       disabled={busy}
-                      whileTap={reduced || busy ? undefined : { scale: 0.985 }}
+                      whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
                     >
                       {busy ? "Menyimpan sandi..." : "Verifikasi & Simpan Sandi Baru"}
                       <i className="bi bi-check2-circle" aria-hidden="true" />
@@ -746,7 +1107,7 @@ export function LoginForm({
                           disabled={busy}
                           onClick={() => setRecoveryStep("request")}
                         >
-                          Ubah email / NIDN
+                          Ubah alamat email
                         </button>
                       </div>
                     )}
@@ -759,7 +1120,7 @@ export function LoginForm({
                     type="button"
                     className="btn btn-primary btn-full auth-submit"
                     onClick={() => switchMode("password")}
-                    whileTap={reduced ? undefined : { scale: 0.985 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.985 }}
                   >
                     Masuk dengan Kata Sandi Baru
                     <i className="bi bi-arrow-right" aria-hidden="true" />
@@ -768,7 +1129,7 @@ export function LoginForm({
               )}
             </AnimatePresence>
 
-            {isLoginMode && (
+            {showGoogleSection && (
               <>
                 <div className="auth-divider">
                   <span />
@@ -776,20 +1137,28 @@ export function LoginForm({
                   <span />
                 </div>
 
-                <m.button
-                  type="button"
-                  className="btn btn-google btn-full"
-                  onClick={handleGoogleLogin}
-                  disabled={busy}
-                  whileTap={reduced || busy ? undefined : { scale: 0.985 }}
-                >
-                  <GoogleMark />
-                  Lanjutkan dengan Google
-                </m.button>
+                {GOOGLE_CLIENT_ID && (
+                  <div
+                    ref={googleBtnRef}
+                    className={`google-gis-host ${gisReady ? "ready" : ""}`}
+                  />
+                )}
 
-                <p className="field-hint" style={{ marginTop: 14, marginBottom: 0 }}>
-                  Hanya email Google yang terdaftar pada akun kampus yang diizinkan. Tidak ada
-                  pendaftaran otomatis.
+                {(!GOOGLE_CLIENT_ID || !gisReady) && (
+                  <m.button
+                    type="button"
+                    className="btn btn-google btn-full"
+                    onClick={handleGoogleOAuthFallback}
+                    disabled={busy}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
+                  >
+                    <GoogleMark />
+                    Lanjutkan dengan Google
+                  </m.button>
+                )}
+
+                <p className="field-hint" style={{ marginTop: 12, marginBottom: 0 }}>
+                  Gunakan akun Google dengan email yang terdaftar pada portal kampus.
                 </p>
               </>
             )}

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -46,11 +47,13 @@ export function PortalShell({
   onDemoNavigate,
   onDemoRole,
   initialUnread = 0,
+  avatarUrl = null,
 }: {
   profile: Profile;
   children: React.ReactNode;
   preview?: boolean;
   initialUnread?: number;
+  avatarUrl?: string | null;
   activeTab?: string;
   onDemoNavigate?: (path: string) => void;
   onDemoRole?: (role: Role) => void;
@@ -222,7 +225,13 @@ export function PortalShell({
           </nav>
           <div className="side-bottom">
             <div className="side-profile">
-              <div className="avatar">{initials(profile.full_name)}</div>
+              <div className="avatar">
+                {avatarUrl ? (
+                  <Image src={avatarUrl} alt={profile.full_name} width={39} height={39} unoptimized className="avatar-img" />
+                ) : (
+                  initials(profile.full_name)
+                )}
+              </div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <strong>{profile.full_name}</strong>
                 <span>{ROLE_LABEL[profile.role]}</span>
@@ -294,7 +303,11 @@ export function PortalShell({
                 aria-expanded={open}
                 onClick={() => setOpen((v) => !v)}
               >
-                <i className="bi bi-person-circle" />
+                {avatarUrl ? (
+                  <Image src={avatarUrl} alt={profile.full_name} width={41} height={41} unoptimized className="topbar-avatar-img" />
+                ) : (
+                  <i className="bi bi-person-circle" />
+                )}
               </button>
 
               <AnimatePresence>
@@ -308,12 +321,35 @@ export function PortalShell({
                     exit={reduced ? undefined : { opacity: 0, y: -4, scale: 0.97 }}
                     transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
                   >
-                    <strong>{profile.full_name}</strong>
-                    <div className="subtle tiny">{profile.identity_number}</div>
-                    <div className="subtle tiny">{profile.email}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                      <div className="avatar">
+                        {avatarUrl ? (
+                          <Image src={avatarUrl} alt={profile.full_name} width={39} height={39} unoptimized className="avatar-img" />
+                        ) : (
+                          initials(profile.full_name)
+                        )}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {profile.full_name}
+                        </strong>
+                        <div className="subtle tiny">{profile.identity_number}</div>
+                      </div>
+                    </div>
+                    <div className="subtle tiny" style={{ overflowWrap: "anywhere" }}>{profile.email}</div>
+                    {!preview && (
+                      <Link
+                        href="/pengaturan"
+                        className="btn btn-quiet btn-full"
+                        style={{ marginTop: 12 }}
+                        onClick={() => setOpen(false)}
+                      >
+                        <i className="bi bi-person-gear" /> Profil &amp; Ganti PP
+                      </Link>
+                    )}
                     <button
                       className="btn btn-secondary btn-full"
-                      style={{ marginTop: 15 }}
+                      style={{ marginTop: 8 }}
                       onClick={logout}
                     >
                       <i className="bi bi-box-arrow-right" />

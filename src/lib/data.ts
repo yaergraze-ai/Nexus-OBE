@@ -1,6 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import type {AcademicClass,Meeting,Notification,RpsCpl,RpsCpmk,RpsSub,Grade,Profile} from "@/types/domain";
+import type {AcademicClass,Meeting,MeetingReference,MeetingReferenceFile,Notification,RpsCpl,RpsCpmk,RpsSub,Grade,Profile} from "@/types/domain";
+import {MEETING_REF_BUCKET} from "@/lib/assignments/attachments";
 export async function readClasses(db:SupabaseClient){
  const {data,error}=await db.from("classes").select("*, courses(*), lecturer_directory(*)").order("schedule_day");
  if(error)throw new Error(error.message);return (data??[]) as AcademicClass[];
@@ -32,4 +33,30 @@ export async function readGrades(db:SupabaseClient,classId:string){
 export async function readStudents(db:SupabaseClient,classId:string){
  const {data,error}=await db.from("class_enrollments").select("student_id, profiles:student_id(id,full_name,identity_number,email,role,is_active)").eq("class_id",classId);
  if(error)throw new Error(error.message);return (data??[]).map(r=>r.profiles as unknown as Profile).filter(Boolean);
+}
+export async function readMeetingReferences(db:SupabaseClient,classId:string):Promise<Record<string,MeetingReference[]>>{
+ const [{data:refs,error:refErr},{data:files,error:fileErr}]=await Promise.all([
+  db.from("meeting_references").select("*").eq("class_id",classId).order("created_at",{ascending:true}),
+  db.from("meeting_reference_files").select("*").eq("class_id",classId).order("created_at",{ascending:true})
+ ]);
+ if(refErr||fileErr){
+  const code=refErr?.code||fileErr?.code;
+  if(code==="42P01"||code==="PGRST205")return {};
+  throw new Error(refErr?.message||fileErr?.message);
+ }
+ const rawFiles=(files??[]) as MeetingReferenceFile[];
+ const signedUrls=await Promise.all(rawFiles.map(f=>db.storage.from(MEETING_REF_BUCKET).createSignedUrl(f.storage_path,3600)));
+ const filesByRef:Record<string,MeetingReferenceFile[]>={};
+ rawFiles.forEach((f,i)=>{
+  const list=filesByRef[f.reference_id]??[];
+  list.push({...f,signedUrl:signedUrls[i]?.data?.signedUrl});
+  filesByRef[f.reference_id]=list;
+ });
+ const byMeeting:Record<string,MeetingReference[]>={};
+ for(const r of (refs??[]) as Omit<MeetingReference,"files">[]){
+  const list=byMeeting[r.meeting_id]??[];
+  list.push({...r,files:filesByRef[r.id]??[]});
+  byMeeting[r.meeting_id]=list;
+ }
+ return byMeeting;
 }

@@ -63,7 +63,7 @@ export async function clearAuthThrottle(
 }
 
 /**
- * Resolves an active campus profile from email (all roles) or identity_number (non-mahasiswa only).
+ * Resolves an active campus profile from email or NIM/NIDN/identity_number.
  */
 export async function resolveActiveProfileByIdentifier(
   admin: SupabaseClient,
@@ -82,13 +82,40 @@ export async function resolveActiveProfileByIdentifier(
     return data?.is_active ? (data as ActiveProfileRecord) : null;
   }
 
-  if (!/^[0-9]{6,30}$/.test(identifier)) return null;
+  if (!/^(?=.*\d)[a-z0-9._-]{4,30}$/.test(identifier)) return null;
   const { data, error } = await admin
     .from("profiles")
     .select("id,email,full_name,identity_number,role,is_active")
-    .eq("identity_number", identifier)
+    .ilike("identity_number", identifier)
     .maybeSingle();
   if (error) throw error;
-  if (!data?.is_active || data.role === "mahasiswa") return null;
-  return data as ActiveProfileRecord;
+  return data?.is_active ? (data as ActiveProfileRecord) : null;
+}
+
+export async function elevateMfaIfRequired(
+  db: SupabaseClient,
+  totpCode?: string
+): Promise<boolean> {
+  const { data: aal, error: aalError } = await db.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aalError) throw aalError;
+  if (aal?.nextLevel !== "aal2" || aal.currentLevel === "aal2") return true;
+  if (!totpCode) return false;
+
+  const { data: factors, error: factorError } = await db.auth.mfa.listFactors();
+  if (factorError) throw factorError;
+  const verifiedFactor = factors?.totp?.find((f) => f.status === "verified");
+  if (!verifiedFactor) throw new Error("Faktor autentikator tidak ditemukan.");
+
+  const { data: challenge, error: challengeError } = await db.auth.mfa.challenge({
+    factorId: verifiedFactor.id,
+  });
+  if (challengeError) throw challengeError;
+
+  const { error: verifyError } = await db.auth.mfa.verify({
+    factorId: verifiedFactor.id,
+    challengeId: challenge.id,
+    code: totpCode,
+  });
+  if (verifyError) throw new Error("Kode Authenticator (TOTP) tidak valid.");
+  return true;
 }
