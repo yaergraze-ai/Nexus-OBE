@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   AnimatePresence,
@@ -65,13 +65,11 @@ export function PortalShell({
   onDemoRole?: (role: Role) => void;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const reduced = useReducedMotion();
   const [clock, setClock] = useState("");
   const [open, setOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [navLoading, setNavLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [unread, setUnread] = useState(initialUnread);
   const [toast, setToast] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
@@ -80,6 +78,12 @@ export function PortalShell({
     setNavLoading(false);
     setDrawerOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const clearPending = () => setNavLoading(false);
+    window.addEventListener("pageshow", clearPending);
+    return () => window.removeEventListener("pageshow", clearPending);
+  }, []);
 
   useEffect(() => {
     if (!navLoading) return;
@@ -179,13 +183,6 @@ export function PortalShell({
     if (!active(path)) setNavLoading(true);
   };
 
-  const triggerRefresh = () => {
-    if (preview) return;
-    setRefreshing(true);
-    router.refresh();
-    setTimeout(() => setRefreshing(false), 900);
-  };
-
   const menuLabel = (item: (typeof menus)[number]) => {
     if (item.path === "/mahasiswa") {
       return profile.role === "dosen" ? "Mahasiswa Diampu" : "Data Mahasiswa";
@@ -269,6 +266,7 @@ export function PortalShell({
         </aside>
 
         <div className="mainwrap">
+          {navLoading && <div className="route-progress" aria-hidden="true" />}
           {preview && (
             <div className="demo-ribbon">
               PRATINJAU INTERAKTIF · Data contoh, tindakan tidak tersimpan ke Supabase
@@ -301,7 +299,7 @@ export function PortalShell({
               </div>
             </div>
             <div className="topbar-right" ref={menuRef}>
-              {(navLoading || refreshing) && (
+              {navLoading && (
                 <div className="route-spinner-pill" role="status">
                   <span className="spinner-ring sm" aria-hidden="true" />
                   <span>Memuat...</span>
@@ -319,17 +317,6 @@ export function PortalShell({
                   <option value="admin">Admin</option>
                   <option value="super_admin">Super Admin</option>
                 </select>
-              )}
-              {!preview && (
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="Muat ulang data halaman"
-                  title="Muat ulang data"
-                  onClick={triggerRefresh}
-                >
-                  <i className={`bi bi-arrow-clockwise ${refreshing ? "spin-icon" : ""}`} />
-                </button>
               )}
               <div className="top-pill">
                 <i className="bi bi-calendar3" />
