@@ -1,13 +1,15 @@
 import Link from "next/link";
 import {notFound} from "next/navigation";
 import {sessionContext} from "@/lib/auth";
-import type {Assignment,Submission,WorkFile} from "@/types/coursework";
+import {readAssignmentById} from "@/lib/data";
+import type {Submission,WorkFile} from "@/types/coursework";
 import {COMPONENT_LABEL} from "@/types/coursework";
 import {ATTACHMENT_BUCKET} from "@/lib/assignments/attachments";
 import {adminClient} from "@/lib/supabase/admin";
 import {dateTimeWib} from "@/lib/utils/wib";
 import {SectionHead,Tag,Empty} from "@/components/UI";
 import {FileList,UploadAttachments,SubmissionEditor,GradeSubmissionForm} from "@/components/SubmissionEditor";
+import {DeleteAssignmentButton} from "@/components/MeetingTasks";
 
 async function signedFiles(rows:WorkFile[]):Promise<WorkFile[]>{
  if(rows.length===0)return [];
@@ -20,10 +22,11 @@ async function signedFiles(rows:WorkFile[]):Promise<WorkFile[]>{
 }
 export default async function AssignmentDetail({params}:{params:Promise<{assignmentId:string}>}){
  const {assignmentId}=await params;const {db,profile}=await sessionContext();
- const {data:raw,error}=await db.from("assignments").select("*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id))").eq("id",assignmentId).maybeSingle();
- if(error||!raw)notFound();const task=raw as unknown as Assignment;
+ const task=await readAssignmentById(db,assignmentId);
+ if(!task)notFound();
  const manage=["admin","super_admin"].includes(profile.role)||(profile.role==="dosen"&&profile.identity_number===task.classes.lecturer_identity_number);
  const student=profile.role==="mahasiswa";
+ const canDelete=manage||(student&&task.author_id===profile.id);
  const editable=student&&(new Date(task.due_at)>new Date()||task.accept_late);
  const [{data:materials,error:materialError},{data:records,error:subError}]=await Promise.all([
   db.from("assignment_files").select("id,storage_path,file_name,content_type,byte_size").eq("assignment_id",task.id).order("created_at"),
@@ -38,8 +41,8 @@ export default async function AssignmentDetail({params}:{params:Promise<{assignm
  const [taskFiles,submissionFiles]=await Promise.all([signedFiles((materials??[]) as WorkFile[]),signedFiles((fileRows??[]) as WorkFile[])]);
  const typedFiles=(fileRows??[]) as (WorkFile&{submission_id:string})[];
  return <>
-  <div className="subtle tiny" style={{marginBottom:16}}><Link className="crumb-link" href="/tugas">Tugas</Link> / {task.classes.courses.name_id}</div>
-  <SectionHead eyebrow={`${task.classes.class_code} · ${COMPONENT_LABEL[task.component]}`} title={task.title} subtitle={`Tenggat ${dateTimeWib(task.due_at)} · ${task.accept_late?"Terima keterlambatan":"Ditutup setelah tenggat"}`}/>
+  <div className="subtle tiny" style={{marginBottom:16}}><Link className="crumb-link" href="/tugas">Tugas</Link> / <Link className="crumb-link" href={`/kelas/${task.class_id}`}>{task.classes.courses.name_id}</Link>{task.meetings?<> / <Link className="crumb-link" href={`/kelas/${task.class_id}#pertemuan-${task.meetings.meeting_number}`}>Pertemuan #{task.meetings.meeting_number}</Link></>:null}</div>
+  <SectionHead eyebrow={`${task.classes.class_code}${task.meetings?` · Pertemuan #${task.meetings.meeting_number}`:""} · ${COMPONENT_LABEL[task.component]}`} title={task.title} subtitle={`Tenggat ${dateTimeWib(task.due_at)} · ${task.accept_late?"Terima keterlambatan":"Ditutup setelah tenggat"}`}/>
   <div className="details-grid"><div className="stack"><section className="panel"><div className="panelhead"><h2>Instruksi & materi</h2><Tag kind={new Date(task.due_at)>new Date()||task.accept_late?"good":"bad"}>{new Date(task.due_at)>new Date()?"Terbuka":task.accept_late?"Terlambat diizinkan":"Ditutup"}</Tag></div><p className="preline">{task.description}</p>
    {task.resource_links?.length>0&&<div className="link-collection"><h3>Tautan referensi</h3>{task.resource_links.map((url,index)=><a key={index} href={url} rel="noopener noreferrer nofollow" target="_blank" className="resource-link"><i className="bi bi-link-45deg"/>{url}</a>)}</div>}
    <h3 style={{marginTop:18}}>Lampiran materi dosen</h3><FileList files={taskFiles} canRemove={manage} kind="material"/>{!taskFiles.length&&<p className="subtle tiny">Belum ada materi yang dilampirkan.</p>}{manage&&<UploadAttachments targetId={task.id} kind="material" enabled/>}
@@ -53,7 +56,7 @@ export default async function AssignmentDetail({params}:{params:Promise<{assignm
     {s.status==="SUBMITTED"&&<GradeSubmissionForm submission={s}/>}</article>)}
    {!submissions.length&&<Empty title="Belum ada pengumpulan" message="Mahasiswa yang sudah mengumpulkan tugas akan muncul di daftar ini." icon="inbox"/>}
   </section>}
-  </div><aside className="stack"><section className="panel"><h2>Informasi Tugas</h2><div className="stat-line"><span>Mata kuliah</span><strong>{task.classes.courses.name_id}</strong></div><div className="stat-line"><span>Kelas</span><strong>{task.classes.class_code}</strong></div><div className="stat-line"><span>Kategori nilai</span><strong>{COMPONENT_LABEL[task.component]}</strong></div><div className="stat-line"><span>Tenggat</span><strong>{dateTimeWib(task.due_at)}</strong></div><div className="stat-line"><span>Lampiran materi</span><strong>{taskFiles.length}</strong></div></section>
+  </div><aside className="stack"><section className="panel"><h2>Informasi Tugas</h2><div className="stat-line"><span>Mata kuliah</span><Link href={`/kelas/${task.class_id}`} className="crumb-link"><strong>{task.classes.courses.name_id}</strong></Link></div><div className="stat-line"><span>Kelas</span><strong>{task.classes.class_code}</strong></div>{task.meetings&&<div className="stat-line"><span>Pertemuan</span><Link href={`/kelas/${task.class_id}#pertemuan-${task.meetings.meeting_number}`} className="crumb-link"><strong>Pertemuan #{task.meetings.meeting_number}</strong></Link></div>}<div className="stat-line"><span>Kategori nilai</span><strong>{COMPONENT_LABEL[task.component]}</strong></div><div className="stat-line"><span>Tenggat</span><strong>{dateTimeWib(task.due_at)}</strong></div><div className="stat-line"><span>Lampiran materi</span><strong>{taskFiles.length}</strong></div>{canDelete&&<div className="form-actions"><DeleteAssignmentButton assignmentId={task.id} redirectTo={`/kelas/${task.class_id}`}/></div>}</section>
   <section className="panel"><h2>Ketentuan pengumpulan</h2><p className="subtle tiny">Anda dapat menambah lampiran berkali-kali tanpa batas jumlah tetap pada formulir. Maksimal 10 MB per file. Tautan eksternal hanya HTTPS, dan akses Google Drive harus diatur oleh pemilik. Perubahan nilai tugas oleh dosen memperbarui rerata komponen PAP yang sesuai.</p></section>
   </aside></div>
  </>;

@@ -8,10 +8,11 @@ export const announcementInput=z.object({
  pinned:z.boolean(),expiresAt:z.iso.datetime({offset:true}).nullable()
 }).strict();
 export const assignmentInput=z.object({
- id:z.uuid().nullable(),classId:z.uuid(),title:z.string().trim().min(5).max(150),
+ id:z.uuid().nullable(),classId:z.uuid(),meetingId:z.uuid().nullable().optional(),title:z.string().trim().min(5).max(150),
  description:z.string().trim().min(10).max(6000),component:z.enum(["daily_task","group_task","major_project"]),
  links:z.array(externalLink).max(100),dueAt:z.iso.datetime({offset:true}),acceptLate:z.boolean()
 }).strict();
+export const deleteAssignmentInput=z.object({assignmentId:z.uuid()}).strict();
 export const submissionInput=z.object({
  assignmentId:z.uuid(),content:z.string().max(10000),links:z.array(externalLink).max(200),submit:z.boolean()
 }).strict();

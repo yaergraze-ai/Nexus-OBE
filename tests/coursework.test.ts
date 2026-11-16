@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { detectScheduleConflicts, type WeeklyCandidate } from "../src/lib/utils/schedule-conflicts";
 import { inspectAttachment, inspectReferenceFile, safeFileName } from "../src/lib/assignments/attachments";
 import { safeExternalUrl } from "../src/lib/assignments/links";
+import { assignmentInput, deleteAssignmentInput } from "../src/lib/assignments/validation";
 import { wibInput, wibToIso } from "../src/lib/utils/wib";
 const first: WeeklyCandidate = { id: "one", academic_year: "2026/2027 Ganjil", class_code: "TI24D", lecturer_identity_number: "L1", schedule_day: "Senin", start_time: "10:00:00", end_time: "12:00:00", room_name: "R 101", uts_schedule: null, uas_schedule: null };
 const second: WeeklyCandidate = { ...first, id: "two", class_code: "TI25D", lecturer_identity_number: "L2", room_name: "R 102" };
@@ -51,4 +52,23 @@ test("meeting reference inspection supports doc, rar, 7z, bib, zip, pdf and bloc
     assert.deepEqual(inspectReferenceFile("arsip.7z", new Uint8Array([55, 122, 188, 175, 39, 28])), { mime: "application/x-7z-compressed", extension: "7z" });
     assert.deepEqual(inspectReferenceFile("refs.bib", new TextEncoder().encode("@article{key,title={OBE}}")), { mime: "application/x-bibtex", extension: "bib" });
     assert.ok("error" in inspectReferenceFile("fake.doc", new Uint8Array([80, 75, 3, 4])));
+});
+
+test("assignment validation accepts optional meetingId and delete schema validates UUID", () => {
+    const classId = "11111111-1111-4111-8111-111111111111";
+    const meetingId = "22222222-2222-4222-8222-222222222222";
+    const parsed = assignmentInput.parse({
+        id: null,
+        classId,
+        meetingId,
+        title: "Tugas Pertemuan 5 — Penyusunan SRS",
+        description: "Susun dokumen SRS sesuai standar ISO/IEC/IEEE 29148.",
+        component: "daily_task",
+        links: ["https://github.com/org/repo"],
+        dueAt: "2026-12-14T16:59:00.000Z",
+        acceptLate: true,
+    });
+    assert.equal(parsed.meetingId, meetingId);
+    assert.equal(deleteAssignmentInput.parse({ assignmentId: meetingId }).assignmentId, meetingId);
+    assert.throws(() => deleteAssignmentInput.parse({ assignmentId: "not-a-uuid" }));
 });
