@@ -207,7 +207,7 @@ export function KrsManager({
         </div>
         {roster.length ? (
           <div className="table-scroll">
-            <table className="table">
+            <table className="table table-mobile-cards">
               <thead>
                 <tr>
                   <th>Nama Mahasiswa</th>
@@ -219,12 +219,12 @@ export function KrsManager({
               <tbody>
                 {roster.map((s) => (
                   <tr key={s.id}>
-                    <td>
+                    <td className="wrap" data-primary="true">
                       <strong>{s.full_name}</strong>
                     </td>
-                    <td>{s.identity_number}</td>
-                    <td className="tiny subtle">{s.email}</td>
-                    <td>
+                    <td data-label="NIM">{s.identity_number}</td>
+                    <td className="tiny subtle" data-label="Email">{s.email}</td>
+                    <td data-actions="true">
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"

@@ -133,7 +133,7 @@ export default async function GradesHome() {
 
         <div className="panel tight">
           <div className="table-scroll">
-            <table className="table">
+            <table className="table table-mobile-cards">
               <thead>
                 <tr>
                   <th>Mata Kuliah &amp; Kelas</th>
@@ -148,7 +148,7 @@ export default async function GradesHome() {
               <tbody>
                 {rows.map(({ klass: c, totalMtgs, hadir, attPct, final }) => (
                   <tr key={c.id}>
-                    <td>
+                    <td className="wrap" data-primary="true">
                       <Link href={`/kelas/${c.id}`} className="crumb-link">
                         <strong>{c.courses.name_id}</strong>
                       </Link>
@@ -156,10 +156,10 @@ export default async function GradesHome() {
                         {c.courses.course_code} · {c.class_code} · {c.lecturer_directory.full_name}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="SKS">
                       <strong>{c.courses.sks_total}</strong> SKS
                     </td>
-                    <td>
+                    <td data-label="Status RPS">
                       <div style={{ display: "grid", gap: 6 }}>
                         <ValidationStatus
                           kaprodi={c.rps_validated_kaprodi}
@@ -170,16 +170,18 @@ export default async function GradesHome() {
                         </Link>
                       </div>
                     </td>
-                    <td>
-                      <div className="tiny" style={{ marginBottom: 4 }}>
-                        {hadir}/{totalMtgs} ({attPct}%)
+                    <td data-label="Kehadiran">
+                      <div style={{ minWidth: 120 }}>
+                        <div className="tiny" style={{ marginBottom: 4 }}>
+                          {hadir}/{totalMtgs} ({attPct}%)
+                        </div>
+                        <Progress value={attPct} />
                       </div>
-                      <Progress value={attPct} />
                     </td>
-                    <td>
+                    <td data-label="Nilai Akhir">
                       <strong>{final ? final.numeric.toFixed(2) : "—"}</strong>
                     </td>
-                    <td>
+                    <td data-label="Mutu">
                       {final ? (
                         <Tag
                           kind={
@@ -194,7 +196,7 @@ export default async function GradesHome() {
                         <Tag kind="neutral">Belum Dinilai</Tag>
                       )}
                     </td>
-                    <td>
+                    <td data-actions="true">
                       <div className="chip-row">
                         <Link
                           href={`/kelas/${c.id}/raport`}
@@ -237,7 +239,7 @@ export default async function GradesHome() {
       />
       <div className="panel tight">
         <div className="table-scroll">
-          <table className="table">
+          <table className="table table-mobile-cards">
             <thead>
               <tr>
                 <th>Mata Kuliah</th>
@@ -250,19 +252,19 @@ export default async function GradesHome() {
             <tbody>
               {classes.map((c) => (
                 <tr key={c.id}>
-                  <td>
+                  <td className="wrap" data-primary="true">
                     <Link href={`/kelas/${c.id}`} className="crumb-link">
                       <strong>{c.courses.name_id}</strong>
                     </Link>
                   </td>
-                  <td>
+                  <td data-label="Kelas & SKS">
                     {c.class_code} · {c.courses.sks_total} SKS
                   </td>
-                  <td>{c.lecturer_directory.full_name}</td>
-                  <td>
+                  <td data-label="Dosen">{c.lecturer_directory.full_name}</td>
+                  <td data-label="Target Mutu">
                     <Tag kind="blue">{c.courses.passing_grade_target.toFixed(2)}</Tag>
                   </td>
-                  <td>
+                  <td data-actions="true">
                     <div className="chip-row">
                       {isAdminRole ? (
                         <>

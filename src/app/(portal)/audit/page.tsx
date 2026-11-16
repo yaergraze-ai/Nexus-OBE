@@ -40,7 +40,7 @@ export default async function AuditPage() {
       {data?.length ? (
         <div className="panel tight">
           <div className="table-scroll">
-            <table className="table">
+            <table className="table table-mobile-cards">
               <thead>
                 <tr>
                   <th>Waktu WIB</th>
@@ -53,24 +53,26 @@ export default async function AuditPage() {
               <tbody>
                 {data.map((a) => (
                   <tr key={a.id}>
-                    <td>
+                    <td data-label="Waktu">
                       {new Date(a.created_at).toLocaleString("id-ID", {
                         timeZone: "Asia/Jakarta",
                       })}
                     </td>
-                    <td>
+                    <td className="wrap" data-primary="true">
                       <strong>{(a.actor_id && actors.get(a.actor_id)) || "Sistem / Anonim"}</strong>
                     </td>
-                    <td>
+                    <td data-label="Aktivitas">
                       <Tag kind={a.action.includes("FAIL") ? "bad" : "blue"}>
                         {a.action}
                       </Tag>
                     </td>
-                    <td className="tiny">
-                      <div>{a.target_table}</div>
-                      <div className="subtle">{formatMetadata(a.metadata)}</div>
+                    <td className="tiny" data-label="Entitas">
+                      <div>
+                        <div>{a.target_table}</div>
+                        <div className="subtle">{formatMetadata(a.metadata)}</div>
+                      </div>
                     </td>
-                    <td className="tiny">{a.ip_address || "Internal"}</td>
+                    <td className="tiny" data-label="IP">{a.ip_address || "Internal"}</td>
                   </tr>
                 ))}
               </tbody>

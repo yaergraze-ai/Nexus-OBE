@@ -17,7 +17,7 @@ export default async function ReviewPage() {
       />
       <div className="panel tight">
         <div className="table-scroll">
-          <table className="table">
+          <table className="table table-mobile-cards">
             <thead>
               <tr>
                 <th>Mata Kuliah</th>
@@ -34,37 +34,39 @@ export default async function ReviewPage() {
                 const nextPbm = c.pbm_period === "on" ? "off" : "on";
                 return (
                   <tr key={c.id}>
-                    <td>
+                    <td className="wrap" data-primary="true">
                       <Link className="crumb-link" href={`/kelas/${c.id}/rps`}>
                         <strong>{c.courses.name_id}</strong>
                       </Link>
                       <div className="tiny subtle">{c.courses.course_code} · {c.courses.sks_total} SKS</div>
                     </td>
-                    <td>
-                      {c.lecturer_directory.full_name}
-                      <div className="tiny subtle">{c.class_code} · {c.schedule_day}</div>
+                    <td data-label="Dosen & Kelas">
+                      <div>
+                        <div>{c.lecturer_directory.full_name}</div>
+                        <div className="tiny subtle">{c.class_code} · {c.schedule_day}</div>
+                      </div>
                     </td>
-                    <td>
+                    <td data-label="Status RPS">
                       <Tag kind={c.rps_submitted ? "blue" : "warn"}>
                         {c.rps_submitted ? "Diajukan" : "Draft"}
                       </Tag>
                     </td>
-                    <td>
+                    <td data-label="Kaprodi">
                       <Tag kind={c.rps_validated_kaprodi ? "good" : "warn"}>
                         {c.rps_validated_kaprodi ? "Disetujui" : "Belum"}
                       </Tag>
                     </td>
-                    <td>
+                    <td data-label="Dekan">
                       <Tag kind={c.rps_validated_dekan ? "good" : "warn"}>
                         {c.rps_validated_dekan ? "Disetujui" : "Belum"}
                       </Tag>
                     </td>
-                    <td>
+                    <td data-label="Periode PBM">
                       <Tag kind={c.pbm_period === "on" ? "good" : "bad"}>
                         PBM {c.pbm_period.toUpperCase()}
                       </Tag>
                     </td>
-                    <td>
+                    <td data-actions="true">
                       <div className="form-actions" style={{ margin: 0 }}>
                         {c.rps_submitted && !c.rps_validated_kaprodi && (
                           <ActionButton

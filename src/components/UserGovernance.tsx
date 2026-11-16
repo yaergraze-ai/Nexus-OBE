@@ -185,7 +185,7 @@ export function UserGovernance({
       ) : (
         <div className="panel tight">
           <div className="table-scroll">
-            <table className="table">
+            <table className="table table-mobile-cards">
               <thead>
                 <tr>
                   <th>Pengguna</th>
@@ -199,18 +199,18 @@ export function UserGovernance({
               <tbody>
                 {filtered.map((u) => (
                   <tr key={u.id}>
-                    <td>
+                    <td className="wrap" data-primary="true">
                       <strong>{u.full_name}</strong>
                       <div className="tiny subtle">{u.email}</div>
                     </td>
-                    <td>{u.identity_number}</td>
-                    <td>{ROLE_LABEL[u.role]}</td>
-                    <td>
+                    <td data-label="Nomor Induk">{u.identity_number}</td>
+                    <td data-label="Peran">{ROLE_LABEL[u.role]}</td>
+                    <td data-label="Status">
                       <Tag kind={u.is_active ? "good" : "bad"}>
                         {u.is_active ? "Aktif" : "Nonaktif"}
                       </Tag>
                     </td>
-                    <td>
+                    <td data-label="Role">
                       {u.id !== currentId ? (
                         <select
                           className="select"
@@ -230,7 +230,7 @@ export function UserGovernance({
                       )}
                       {messages[u.id] && <div className="tiny">{messages[u.id]}</div>}
                     </td>
-                    <td>
+                    <td data-actions="true">
                       {u.id !== currentId ? (
                         <button
                           type="button"
