@@ -8,6 +8,7 @@ const protectedPrefixes = [
   "/tugas",
   "/pengumuman",
   "/nilai",
+  "/mahasiswa",
   "/krs",
   "/rps-review",
   "/pengguna",
@@ -140,6 +141,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const restrict: [string, string[]][] = [
+    ["/mahasiswa", ["dosen", "admin", "super_admin"]],
     ["/krs", ["admin", "super_admin"]],
     ["/rps-review", ["admin", "super_admin"]],
     ["/pengguna", ["super_admin"]],

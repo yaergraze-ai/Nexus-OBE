@@ -11,6 +11,8 @@ export function ClassList({
   enrolledIds,
   liveClassIds = [],
   taskCounts = {},
+  studentCounts,
+  uniqueStudentTotal,
 }: {
   classes: AcademicClass[];
   preview?: boolean;
@@ -18,6 +20,8 @@ export function ClassList({
   enrolledIds?: string[];
   liveClassIds?: string[];
   taskCounts?: Record<string, number>;
+  studentCounts?: Record<string, number>;
+  uniqueStudentTotal?: number;
 }) {
   const hasEnrollmentFilter = Array.isArray(enrolledIds);
   const [query, setQuery] = useState("");
@@ -88,6 +92,11 @@ export function ClassList({
           </div>
         )}
         <span className="subtle tiny">{filtered.length} kelas ditemukan</span>
+        {typeof uniqueStudentTotal === "number" && !preview && (
+          <Link href="/mahasiswa" className="btn btn-secondary btn-sm">
+            <i className="bi bi-people-fill" /> Lihat {uniqueStudentTotal} Mahasiswa
+          </Link>
+        )}
       </div>
 
       <div className="class-grid">
@@ -147,6 +156,11 @@ export function ClassList({
               <div className="class-card-bottom">
                 <div className="chip-row">
                   <Tag kind="neutral">{c.courses.sks_total} SKS</Tag>
+                  {studentCounts && (
+                    <Tag kind="blue">
+                      <i className="bi bi-people-fill" /> {studentCounts[c.id] ?? 0} mhs
+                    </Tag>
+                  )}
                   {hasEnrollmentFilter && (
                     <Tag kind={isEnrolled ? "good" : "warn"}>
                       {isEnrolled ? "Terdaftar KRS" : "Non-KRS"}

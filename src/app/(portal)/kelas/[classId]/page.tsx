@@ -66,7 +66,13 @@ export default async function ClassDetail({
             .maybeSingle()
         : Promise.resolve({ data: null }),
       readGrades(db, classId),
-      manageRoster ? readStudents(db, classId) : Promise.resolve([] as Profile[]),
+      manageRoster
+        ? readStudents(db, classId, {
+            id: profile.id,
+            role: profile.role,
+            identity_number: profile.identity_number,
+          })
+        : Promise.resolve([] as Profile[]),
     ]);
 
   const canStudentAddTask = profile.role === "mahasiswa" && Boolean(enrollRow.data);
@@ -623,8 +629,14 @@ export default async function ClassDetail({
               <strong>{klass.room_name}</strong>
             </div>
             <div className="stat-line">
-              <span>Rekap peserta PRD</span>
-              <strong>{klass.initial_student_count} orang</strong>
+              <span>{manageRoster ? "Mahasiswa terdaftar" : "Rekap peserta PRD"}</span>
+              {manageRoster ? (
+                <Link href={`/mahasiswa?classId=${classId}`} className="crumb-link">
+                  <strong>{rosterStudents.length} mahasiswa →</strong>
+                </Link>
+              ) : (
+                <strong>{klass.initial_student_count} orang</strong>
+              )}
             </div>
             <div className="stat-line">
               <span>Target mutu</span>

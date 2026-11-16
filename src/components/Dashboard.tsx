@@ -53,6 +53,7 @@ export function Dashboard({
   announcements = [],
   recentTasks = [],
   actualSessions,
+  studentStats,
   mustChangePassword = false,
   needsMfa = false,
 }: {
@@ -67,6 +68,7 @@ export function Dashboard({
   announcements?: Announcement[];
   recentTasks?: DashboardTaskPreview[];
   actualSessions?: number;
+  studentStats?: { unique: number; totalEnrollments: number } | null;
   mustChangePassword?: boolean;
   needsMfa?: boolean;
 }) {
@@ -223,6 +225,14 @@ export function Dashboard({
             value={ips == null ? "Lihat" : ips.toFixed(2)}
             note={ips == null ? "Klik untuk rincian nilai & SKS" : "Dari mata kuliah yang sudah dinilai"}
             href="/nilai"
+          />
+        ) : profile.role === "dosen" && !preview && studentStats ? (
+          <Metric
+            icon="people-fill"
+            label="Mahasiswa Diampu"
+            value={studentStats.unique}
+            note={`${studentStats.totalEnrollments} peserta di ${classes.length} kelas`}
+            href="/mahasiswa"
           />
         ) : (
           <Metric

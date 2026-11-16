@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { sessionContext } from "@/lib/auth";
-import { readClasses, readMeetingsByClasses } from "@/lib/data";
+import {
+  readClasses,
+  readClassStudentCounts,
+  readMeetingsByClasses,
+} from "@/lib/data";
 import { calculateFinal } from "@/lib/utils/grade-calculator";
 import { Metric, Progress, SectionHead, Tag, ValidationStatus } from "@/components/UI";
 import type { Grade } from "@/types/domain";
@@ -225,6 +229,7 @@ export default async function GradesHome() {
     profile.role === "dosen"
       ? all.filter((c) => c.lecturer_identity_number === profile.identity_number)
       : all;
+  const studentStats = await readClassStudentCounts(classes, profile);
 
   return (
     <>
@@ -233,8 +238,8 @@ export default async function GradesHome() {
         title={isAdminRole ? "Rekap & Audit Nilai Kelas" : "Input Nilai Mahasiswa"}
         subtitle={
           isAdminRole
-            ? "Pengisian nilai utama dilakukan oleh Dosen Pengampu. Klik mata kuliah untuk melihat pertemuan secara ringkas, buka E-Raport, atau lakukan koreksi PAP bila dibutuhkan."
-            : "Pilih kelas untuk mengisi enam komponen nilai akhir PAP atau pantau E-Raport."
+            ? `Pengisian nilai utama dilakukan oleh Dosen Pengampu (${studentStats.uniqueStudentCount} mahasiswa unik terdaftar). Klik mata kuliah untuk melihat pertemuan secara ringkas atau buka E-Raport.`
+            : `Pilih kelas (${classes.length} kelas · ${studentStats.uniqueStudentCount} mahasiswa unik) untuk mengisi enam komponen nilai akhir PAP atau pantau E-Raport.`
         }
       />
       <div className="panel tight">
@@ -258,7 +263,8 @@ export default async function GradesHome() {
                     </Link>
                   </td>
                   <td data-label="Kelas & SKS">
-                    {c.class_code} · {c.courses.sks_total} SKS
+                    {c.class_code} · {c.courses.sks_total} SKS ·{" "}
+                    {studentStats.counts[c.id] ?? 0} mhs
                   </td>
                   <td data-label="Dosen">{c.lecturer_directory.full_name}</td>
                   <td data-label="Target Mutu">

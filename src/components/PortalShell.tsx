@@ -17,6 +17,12 @@ import { ROLE_LABEL } from "@/types/domain";
 const menus: { label: string; path: string; icon: string; roles?: Role[] }[] = [
   { label: "Dashboard", path: "/dashboard", icon: "house-door-fill" },
   { label: "Kelas Kuliah", path: "/kelas", icon: "journal-bookmark-fill" },
+  {
+    label: "Mahasiswa Diampu",
+    path: "/mahasiswa",
+    icon: "mortarboard-fill",
+    roles: ["dosen", "admin", "super_admin"],
+  },
   { label: "Jadwal Akademik", path: "/jadwal", icon: "calendar3" },
   { label: "Tugas & Pengumpulan", path: "/tugas", icon: "clipboard2-check" },
   { label: "Nilai & IPS", path: "/nilai", icon: "clipboard2-data" },
@@ -181,6 +187,9 @@ export function PortalShell({
   };
 
   const menuLabel = (item: (typeof menus)[number]) => {
+    if (item.path === "/mahasiswa") {
+      return profile.role === "dosen" ? "Mahasiswa Diampu" : "Data Mahasiswa";
+    }
     if (item.path !== "/nilai") return item.label;
     if (profile.role === "dosen") return "Input Nilai";
     if (profile.role === "admin" || profile.role === "super_admin") {

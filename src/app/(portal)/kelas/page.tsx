@@ -1,5 +1,5 @@
 import { sessionContext } from "@/lib/auth";
-import { readClasses } from "@/lib/data";
+import { readClasses, readClassStudentCounts } from "@/lib/data";
 import { SectionHead } from "@/components/UI";
 import { ClassList } from "@/components/ClassList";
 
@@ -23,6 +23,11 @@ export default async function ClassesPage() {
       ? all.filter((c) => c.lecturer_identity_number === profile.identity_number)
       : all;
 
+  const studentStats =
+    profile.role !== "mahasiswa"
+      ? await readClassStudentCounts(classes, profile)
+      : null;
+
   const enrolledIds =
     profile.role === "mahasiswa"
       ? (enrollRes.data ?? []).map((e) => e.class_id)
@@ -39,13 +44,19 @@ export default async function ClassesPage() {
       <SectionHead
         eyebrow="KATALOG PERKULIAHAN"
         title="Kelas Kuliah"
-        subtitle={`Daftar mata kuliah semester 2026/2027 Ganjil · ${classes.length} kelas`}
+        subtitle={
+          studentStats
+            ? `Daftar mata kuliah semester 2026/2027 Ganjil · ${classes.length} kelas · ${studentStats.uniqueStudentCount} mahasiswa unik (${studentStats.totalEnrollments} peserta)`
+            : `Daftar mata kuliah semester 2026/2027 Ganjil · ${classes.length} kelas`
+        }
       />
       <ClassList
         classes={classes}
         enrolledIds={enrolledIds}
         liveClassIds={liveClassIds}
         taskCounts={taskCounts}
+        studentCounts={studentStats?.counts}
+        uniqueStudentTotal={studentStats?.uniqueStudentCount}
       />
     </>
   );

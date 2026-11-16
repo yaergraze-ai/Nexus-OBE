@@ -1,5 +1,10 @@
 import { sessionContext } from "@/lib/auth";
-import { readAssignmentsBoard, readClasses, readNotifications } from "@/lib/data";
+import {
+  readAssignmentsBoard,
+  readClasses,
+  readClassStudentCounts,
+  readNotifications,
+} from "@/lib/data";
 import { Dashboard } from "@/components/Dashboard";
 import type { DashboardInsight, DashboardTaskPreview } from "@/components/Dashboard";
 import type { Role } from "@/types/domain";
@@ -49,6 +54,7 @@ export async function RoleDashboard({ role }: { role: Role }) {
   }));
 
   let ips: number | null = null;
+  let dosenStudentStats: { unique: number; totalEnrollments: number } | null = null;
   const insights: DashboardInsight[] = [];
 
   if (role === "mahasiswa") {
@@ -113,9 +119,16 @@ export async function RoleDashboard({ role }: { role: Role }) {
       icon: "graph-up-arrow",
     });
   } else if (role === "dosen") {
-    const { data: taskRows } = classIds.length
-      ? await db.from("assignments").select("id").in("class_id", classIds)
-      : { data: [] as { id: string }[] };
+    const [{ data: taskRows }, studentCounts] = await Promise.all([
+      classIds.length
+        ? db.from("assignments").select("id").in("class_id", classIds)
+        : Promise.resolve({ data: [] as { id: string }[] }),
+      readClassStudentCounts(classes, profile),
+    ]);
+    dosenStudentStats = {
+      unique: studentCounts.uniqueStudentCount,
+      totalEnrollments: studentCounts.totalEnrollments,
+    };
     const taskIds = (taskRows ?? []).map((t) => t.id);
     const { data: submissionRows } = taskIds.length
       ? await db
@@ -124,6 +137,13 @@ export async function RoleDashboard({ role }: { role: Role }) {
           .in("assignment_id", taskIds)
       : { data: [] as { id: string; status: string; score: number | null }[] };
 
+    insights.push({
+      label: "Mahasiswa Diampu",
+      value: `${studentCounts.uniqueStudentCount} Mhs`,
+      description: `${studentCounts.totalEnrollments} peserta di ${classes.length} kelas`,
+      href: "/mahasiswa",
+      icon: "people-fill",
+    });
     insights.push({
       label: "Tugas Diampu",
       value: taskIds.length,
@@ -260,6 +280,7 @@ export async function RoleDashboard({ role }: { role: Role }) {
       announcements={(announcementRows.data ?? []) as unknown as Announcement[]}
       recentTasks={recentTasks}
       actualSessions={meetingCount.count ?? 0}
+      studentStats={dosenStudentStats}
       mustChangePassword={Boolean(profile.must_change_password)}
       needsMfa={
         profile.role !== "mahasiswa" &&
