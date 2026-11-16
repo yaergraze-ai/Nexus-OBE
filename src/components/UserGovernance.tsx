@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Profile, Role } from "@/types/domain";
 import { ROLE_LABEL } from "@/types/domain";
 import { postJson } from "@/lib/utils/request";
-import { Tag } from "@/components/UI";
+import { Empty, Tag } from "@/components/UI";
 
 export function UserGovernance({
   users,
@@ -14,6 +14,8 @@ export function UserGovernance({
   users: Profile[];
   currentId: string;
 }) {
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"ALL" | Role>("ALL");
   const [pending, setPending] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -26,6 +28,32 @@ export function UserGovernance({
   const [messages, setMessages] = useState<Record<string, string>>({});
   const router = useRouter();
 
+  const stats = useMemo(
+    () => ({
+      total: users.length,
+      active: users.filter((u) => u.is_active).length,
+      inactive: users.filter((u) => !u.is_active).length,
+      mahasiswa: users.filter((u) => u.role === "mahasiswa").length,
+      dosen: users.filter((u) => u.role === "dosen").length,
+      managers: users.filter((u) => u.role === "admin" || u.role === "super_admin").length,
+    }),
+    [users]
+  );
+
+  const filtered = useMemo(
+    () =>
+      users.filter((u) => {
+        if (roleFilter !== "ALL" && u.role !== roleFilter) return false;
+        const q = query.trim().toLowerCase();
+        if (!q) return true;
+        return [u.full_name, u.email, u.identity_number, ROLE_LABEL[u.role]]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      }),
+    [users, query, roleFilter]
+  );
+
   const change = async (id: string, role: Role) => {
     if (!window.confirm(`Ubah role menjadi ${ROLE_LABEL[role]}?`)) return;
     setPending(id);
@@ -37,6 +65,35 @@ export function UserGovernance({
       setMessages((m) => ({
         ...m,
         [id]: e instanceof Error ? e.message : "Gagal",
+      }));
+    } finally {
+      setPending("");
+    }
+  };
+
+  const toggleStatus = async (u: Profile) => {
+    const next = !u.is_active;
+    if (
+      !window.confirm(
+        next
+          ? `Aktifkan kembali akun ${u.full_name}?`
+          : `Nonaktifkan akun ${u.full_name}? Pengguna tidak akan bisa masuk.`
+      )
+    ) {
+      return;
+    }
+    setPending(`status:${u.id}`);
+    try {
+      await postJson("/api/users/status", { userId: u.id, isActive: next });
+      setMessages((m) => ({
+        ...m,
+        [u.id]: next ? "Akun diaktifkan" : "Akun dinonaktifkan",
+      }));
+      router.refresh();
+    } catch (e) {
+      setMessages((m) => ({
+        ...m,
+        [u.id]: e instanceof Error ? e.message : "Gagal mengubah status",
       }));
     } finally {
       setPending("");
@@ -74,71 +131,131 @@ export function UserGovernance({
 
   return (
     <>
-      <div
-        className="form-actions"
-        style={{ justifyContent: "flex-end", margin: "0 0 18px" }}
-      >
+      <div className="chip-row" style={{ marginBottom: 16 }}>
+        <Tag kind="blue">Total: {stats.total}</Tag>
+        <Tag kind="good">Aktif: {stats.active}</Tag>
+        <Tag kind="bad">Nonaktif: {stats.inactive}</Tag>
+        <Tag kind="neutral">Mahasiswa: {stats.mahasiswa}</Tag>
+        <Tag kind="neutral">Dosen: {stats.dosen}</Tag>
+        <Tag kind="neutral">Pengelola: {stats.managers}</Tag>
+      </div>
+
+      <div className="filters" style={{ marginBottom: 16 }}>
+        <label className="search">
+          <i className="bi bi-search" />
+          <input
+            aria-label="Cari pengguna"
+            placeholder="Cari nama, NIM/NIDN, atau email..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+        <select
+          aria-label="Filter peran"
+          className="select"
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value as "ALL" | Role)}
+        >
+          <option value="ALL">Semua Peran ({users.length})</option>
+          {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABEL[r]}
+            </option>
+          ))}
+        </select>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>
           <i className="bi bi-person-plus" /> Tambah Pengguna
         </button>
       </div>
+
       {inviteMessage && (
         <div className="notice" style={{ marginBottom: 18 }} role="status">
           {inviteMessage}
         </div>
       )}
-      <div className="panel tight">
-        <div className="table-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Pengguna</th>
-                <th>Nomor Induk</th>
-                <th>Peran</th>
-                <th>Status</th>
-                <th>Pengaturan Role</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>
-                    <strong>{u.full_name}</strong>
-                    <div className="tiny subtle">{u.email}</div>
-                  </td>
-                  <td>{u.identity_number}</td>
-                  <td>{ROLE_LABEL[u.role]}</td>
-                  <td>
-                    <Tag kind={u.is_active ? "good" : "bad"}>
-                      {u.is_active ? "Aktif" : "Nonaktif"}
-                    </Tag>
-                  </td>
-                  <td>
-                    {u.id !== currentId ? (
-                      <select
-                        className="select"
-                        disabled={pending === u.id}
-                        aria-label={`Peran ${u.full_name}`}
-                        value={u.role}
-                        onChange={(e) => change(u.id, e.target.value as Role)}
-                      >
-                        {(Object.keys(ROLE_LABEL) as Role[]).map((role) => (
-                          <option value={role} key={role}>
-                            {ROLE_LABEL[role]}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="subtle tiny">Akun Anda</span>
-                    )}
-                    {messages[u.id] && <div className="tiny">{messages[u.id]}</div>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+      {users.length === 0 ? (
+        <div className="panel">
+          <Empty
+            icon="shield-exclamation"
+            title="Daftar pengguna menunggu migrasi SQL 008"
+            message="Jalankan supabase/migrations/008_usable_portal_fixes.sql di Supabase SQL Editor agar Super Admin & Admin dapat mengelola data tanpa wajib mengaktifkan 2FA terlebih dahulu."
+          />
         </div>
-      </div>
+      ) : (
+        <div className="panel tight">
+          <div className="table-scroll">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Pengguna</th>
+                  <th>Nomor Induk</th>
+                  <th>Peran</th>
+                  <th>Status</th>
+                  <th>Pengaturan Role</th>
+                  <th>Aksi Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((u) => (
+                  <tr key={u.id}>
+                    <td>
+                      <strong>{u.full_name}</strong>
+                      <div className="tiny subtle">{u.email}</div>
+                    </td>
+                    <td>{u.identity_number}</td>
+                    <td>{ROLE_LABEL[u.role]}</td>
+                    <td>
+                      <Tag kind={u.is_active ? "good" : "bad"}>
+                        {u.is_active ? "Aktif" : "Nonaktif"}
+                      </Tag>
+                    </td>
+                    <td>
+                      {u.id !== currentId ? (
+                        <select
+                          className="select"
+                          disabled={pending !== ""}
+                          aria-label={`Peran ${u.full_name}`}
+                          value={u.role}
+                          onChange={(e) => change(u.id, e.target.value as Role)}
+                        >
+                          {(Object.keys(ROLE_LABEL) as Role[]).map((role) => (
+                            <option value={role} key={role}>
+                              {ROLE_LABEL[role]}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="subtle tiny">Akun Anda</span>
+                      )}
+                      {messages[u.id] && <div className="tiny">{messages[u.id]}</div>}
+                    </td>
+                    <td>
+                      {u.id !== currentId ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          disabled={pending !== ""}
+                          onClick={() => toggleStatus(u)}
+                        >
+                          <i className={`bi bi-${u.is_active ? "person-x" : "person-check"}`} />{" "}
+                          {pending === `status:${u.id}`
+                            ? "Memproses..."
+                            : u.is_active
+                              ? "Nonaktifkan"
+                              : "Aktifkan"}
+                        </button>
+                      ) : (
+                        <span className="subtle tiny">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {showNew && (
         <div

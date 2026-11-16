@@ -15,6 +15,7 @@ import { PasswordStrengthInput } from "@/components/PasswordStrengthInput";
 interface LoginFormProps {
   initialMode?: AuthMode;
   initialError?: string;
+  initialEmail?: string;
 }
 
 interface GoogleCredentialResponse {
@@ -92,6 +93,7 @@ async function createNoncePair(): Promise<{ raw: string; hashed: string }> {
 export function LoginForm({
   initialMode = "password",
   initialError = "",
+  initialEmail = "",
 }: LoginFormProps) {
   const { device, reducedMotion } = useDeviceAdaptive();
   const [mode, setMode] = useState<AuthMode>(initialMode);
@@ -101,8 +103,8 @@ export function LoginForm({
     initialMode === "new-password" ? "mfa" : "request"
   );
 
-  const [identifier, setIdentifier] = useState("");
-  const [otpEmail, setOtpEmail] = useState("");
+  const [identifier, setIdentifier] = useState(initialEmail);
+  const [otpEmail, setOtpEmail] = useState(initialEmail);
   const [regName, setRegName] = useState("");
   const [regNim, setRegNim] = useState("");
   const [regPassword, setRegPassword] = useState("");
@@ -116,7 +118,11 @@ export function LoginForm({
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(
+    initialMode === "register" && initialEmail
+      ? `Email ${initialEmail} belum terhubung dengan NIM. Lengkapi Nama & NIM lalu selesaikan pendaftaran.`
+      : ""
+  );
   const [cooldown, setCooldown] = useState(0);
   const [gisReady, setGisReady] = useState(false);
   const [googlePending, setGooglePending] = useState<{
@@ -133,6 +139,12 @@ export function LoginForm({
   const nonceRef = useRef<string>("");
   const gisInitializedRef = useRef(false);
   const googleHandlerRef = useRef<(res: GoogleCredentialResponse) => void>(() => {});
+  const modeRef = useRef<AuthMode>(mode);
+  const regNimRef = useRef(regNim);
+  const regNameRef = useRef(regName);
+  modeRef.current = mode;
+  regNimRef.current = regNim;
+  regNameRef.current = regName;
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -149,6 +161,8 @@ export function LoginForm({
     setBusy(true);
     setError("");
     setNotice("");
+    const candidateNim = modeRef.current === "register" ? regNimRef.current.trim() : "";
+    const validPreFilledNim = /^(?=.*\d)[a-zA-Z0-9._-]{4,30}$/.test(candidateNim);
     try {
       const response = await fetch("/api/auth/google", {
         method: "POST",
@@ -156,6 +170,14 @@ export function LoginForm({
         body: JSON.stringify({
           credential: res.credential,
           ...(nonceRef.current ? { nonce: nonceRef.current } : {}),
+          ...(validPreFilledNim
+            ? {
+                nim: candidateNim,
+                ...(regNameRef.current.trim().length >= 3
+                  ? { fullName: regNameRef.current.trim() }
+                  : {}),
+              }
+            : {}),
         }),
       });
       const body = (await response.json()) as {
@@ -1275,7 +1297,7 @@ export function LoginForm({
                 )}
 
                 <p className="field-hint" style={{ marginTop: 12, marginBottom: 0 }}>
-                  Gunakan akun Google dengan email yang terdaftar pada portal kampus.
+                  Masuk instan dengan Gmail terdaftar, atau daftar mahasiswa baru otomatis cukup dengan mengisi NIM.
                 </p>
               </>
             )}

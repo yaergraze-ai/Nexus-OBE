@@ -53,9 +53,10 @@ export async function RoleDashboard({role}:{role:Role}){
    db.from("audit_logs").select("id").order("created_at",{ascending:false}).limit(200),
    db.from("assignments").select("id")
   ]);
-  insights.push({label:"Akun Aktif",value:(profiles??[]).filter(p=>p.is_active).length,description:"Pengguna dan peran",href:"/pengguna",icon:"people-fill"});
+  insights.push({label:"Akun Aktif",value:(profiles??[]).filter(p=>p.is_active).length,description:"Kelola peran & status akun",href:"/pengguna",icon:"people-fill"});
   insights.push({label:"Log Keamanan",value:auditRows?.length??0,description:"200 entri terkini maksimal",href:"/audit",icon:"shield-lock"});
-  insights.push({label:"Kelas Terpantau",value:classes.length,description:"Operasional akademik",href:"/jadwal",icon:"calendar3"});
+  insights.push({label:"Validasi RPS & PBM",value:classes.filter(c=>!c.rps_validated_kaprodi||!c.rps_validated_dekan).length,description:"Otorisasi RPS & kontrol PBM",href:"/rps-review",icon:"patch-check"});
+  insights.push({label:"Kelas & Peserta KRS",value:classes.length,description:"Kelola jadwal & KRS mahasiswa",href:"/krs",icon:"calendar3"});
   insights.push({label:"Total Tugas",value:tasks?.length??0,description:"Kontrol operasional tugas",href:"/tugas",icon:"clipboard2-data"});
  }
  const [{data:liveRows},{data:aal}]=await Promise.all([

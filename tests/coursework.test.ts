@@ -4,6 +4,7 @@ import { detectScheduleConflicts, type WeeklyCandidate } from "../src/lib/utils/
 import { attachmentMimeForName, inspectAttachment, inspectReferenceFile, MAX_ATTACHMENT_BYTES, safeFileName } from "../src/lib/assignments/attachments";
 import { safeExternalUrl } from "../src/lib/assignments/links";
 import { assignmentInput, deleteAssignmentInput } from "../src/lib/assignments/validation";
+import { startMeetingSchema } from "../src/lib/validators";
 import { wibInput, wibToIso } from "../src/lib/utils/wib";
 const first: WeeklyCandidate = { id: "one", academic_year: "2026/2027 Ganjil", class_code: "TI24D", lecturer_identity_number: "L1", schedule_day: "Senin", start_time: "10:00:00", end_time: "12:00:00", room_name: "R 101", uts_schedule: null, uas_schedule: null };
 const second: WeeklyCandidate = { ...first, id: "two", class_code: "TI25D", lecturer_identity_number: "L2", room_name: "R 102" };
@@ -83,4 +84,20 @@ test("student assignment attachments support doc/rar/pdf up to 50 MB and reject 
         { mime: "application/msword", extension: "doc" }
     );
     assert.ok("error" in inspectAttachment("besar.pdf", new Uint8Array([37, 80, 68, 70, 45]), MAX_ATTACHMENT_BYTES + 1));
+});
+
+test("startMeetingSchema accepts PENGGANTI and regular meeting payloads without photo", () => {
+    const valid = startMeetingSchema.parse({
+        classId: "11111111-1111-4111-8111-111111111111",
+        type: "PENGGANTI",
+        summary: "Pembahasan metodologi penelitian dan pengisian presensi.",
+    });
+    assert.equal(valid.type, "PENGGANTI");
+    assert.throws(() =>
+        startMeetingSchema.parse({
+            classId: "11111111-1111-4111-8111-111111111111",
+            type: "KULIAH",
+            summary: "pendek",
+        })
+    );
 });

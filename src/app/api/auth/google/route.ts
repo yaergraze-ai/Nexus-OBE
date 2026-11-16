@@ -10,6 +10,7 @@ import {
   clearAuthThrottle,
   clientIp,
   consumeAuthThrottle,
+  enrollStudentDefaultClasses,
   provisionStudentAccount,
   verifyGoogleTokenInfo,
 } from "@/lib/security/auth-flow";
@@ -112,17 +113,31 @@ export async function POST(req: Request) {
       return apiError(new Error("Akun kampus Anda sedang dinonaktifkan."), 403);
     }
 
+    const canonicalEmail = existingProfile.email.trim().toLowerCase();
     await admin
       .from("account_allowlist")
-      .upsert({ email: existingProfile.email.trim().toLowerCase() }, { onConflict: "email" });
+      .upsert({ email: canonicalEmail }, { onConflict: "email" });
+    await admin.auth.admin
+      .updateUserById(existingProfile.id, { email: canonicalEmail, email_confirm: true })
+      .catch(() => undefined);
     await Promise.resolve(
       admin.rpc("sync_verified_email_identity", { p_user_id: existingProfile.id })
     ).catch(() => undefined);
 
+    if (existingProfile.role === "mahasiswa") {
+      const { count } = await admin
+        .from("class_enrollments")
+        .select("id", { count: "exact", head: true })
+        .eq("student_id", existingProfile.id);
+      if ((count ?? 0) === 0) {
+        await enrollStudentDefaultClasses(admin, existingProfile.id);
+      }
+    }
+
     const signedIn = await establishVerifiedGoogleSession(
       db,
       admin,
-      existingProfile.email.trim().toLowerCase(),
+      canonicalEmail,
       body.credential,
       body.nonce
     );

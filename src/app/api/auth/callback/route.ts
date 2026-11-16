@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { adminClient } from "@/lib/supabase/admin";
 import {
   safeReturnOrigin,
   sameRegisteredEmail,
@@ -27,14 +28,39 @@ export async function GET(request: NextRequest) {
   const {
     data: { user },
   } = await db.auth.getUser();
+  const verifiedEmail = user ? verifiedUserEmail(user) : null;
   const { data: profile } = await db
     .from("profiles")
     .select("id,email,is_active")
     .eq("id", user?.id ?? "")
     .maybeSingle();
 
-  // Never auto-create a campus profile from a Google identity or a matching display name.
-  if (!user || !profile || !sameRegisteredEmail(verifiedUserEmail(user), profile.email)) {
+  if (!user || !verifiedEmail) {
+    await db.auth.signOut();
+    return fail("unregistered");
+  }
+
+  if (!profile) {
+    const admin = adminClient();
+    const { data: existingByEmail } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("email", verifiedEmail)
+      .maybeSingle();
+    await db.auth.signOut();
+    if (!existingByEmail) {
+      await admin.auth.admin.deleteUser(user.id).catch(() => undefined);
+      return NextResponse.redirect(
+        new URL(
+          `/login?mode=register&email=${encodeURIComponent(verifiedEmail)}`,
+          origin
+        )
+      );
+    }
+    return fail("unregistered");
+  }
+
+  if (!sameRegisteredEmail(verifiedEmail, profile.email)) {
     await db.auth.signOut();
     return fail("unregistered");
   }

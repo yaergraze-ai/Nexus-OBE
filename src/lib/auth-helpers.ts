@@ -2,7 +2,7 @@ export type AuthMode = "password" | "otp" | "register" | "recovery" | "new-passw
 
 const ERROR_MESSAGES: Record<string, string> = {
   unregistered:
-    "Akun Google atau email Anda belum terdaftar pada portal kampus atau email tidak cocok. Hubungi admin kampus.",
+    "Akun Google belum terhubung dengan NIM mahasiswa. Gunakan tombol Lanjutkan dengan Google untuk mendaftar otomatis atau masuk lewat tab Daftar.",
   inactive:
     "Akun belum aktif atau email belum terverifikasi. Periksa undangan atau hubungi admin kampus.",
   cancelled: "Masuk dengan Google dibatalkan.",

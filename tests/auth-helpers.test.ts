@@ -47,7 +47,7 @@ test("OAuth and auth error mapping returns safe user-facing messages", () => {
     "unregistered"
   );
   assert.equal(mapOAuthCallbackError("server_error", "unexpected"), "auth");
-  assert.match(authErrorMessage("unregistered"), /belum terdaftar/i);
+  assert.match(authErrorMessage("unregistered"), /belum terhubung/i);
   assert.equal(authErrorMessage(undefined), "");
   assert.equal(parseInitialAuthMode("recovery"), "recovery");
   assert.equal(parseInitialAuthMode("register"), "register");

@@ -8,13 +8,15 @@ export const metadata: Metadata = { title: "Masuk" };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; mode?: string }>;
+  searchParams: Promise<{ error?: string; mode?: string; email?: string }>;
 }) {
   const sp = await searchParams;
+  const cleanEmail = sp.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sp.email.trim()) ? sp.email.trim().toLowerCase() : "";
   return (
     <LoginForm
       initialMode={parseInitialAuthMode(sp.mode)}
       initialError={authErrorMessage(sp.error)}
+      initialEmail={cleanEmail}
     />
   );
 }
