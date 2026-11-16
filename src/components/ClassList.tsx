@@ -1,0 +1,13 @@
+"use client";
+import {useMemo,useState} from "react";import Link from "next/link";
+import type {AcademicClass} from "@/types/domain";import {Tag,ValidationStatus,Progress,Empty} from "@/components/UI";
+export function ClassList({classes,preview=false,onSelect}:{classes:AcademicClass[];preview?:boolean;onSelect?:(id:string)=>void}){
+ const [query,setQuery]=useState("");const [day,setDay]=useState("Semua Hari");
+ const filtered=useMemo(()=>classes.filter(c=>[c.courses.name_id,c.courses.course_code,c.class_code,c.lecturer_directory.full_name].join(" ").toLowerCase().includes(query.toLowerCase())&&(day==="Semua Hari"||c.schedule_day===day)),[classes,day,query]);
+ return <><div className="filters"><label className="search"><i className="bi bi-search"/><input aria-label="Cari mata kuliah" placeholder="Cari mata kuliah, dosen atau kelas..." value={query} onChange={e=>setQuery(e.target.value)}/></label><select aria-label="Filter hari" className="select" value={day} onChange={e=>setDay(e.target.value)}>{["Semua Hari","Senin","Selasa","Rabu","Kamis","Jumat"].map(d=><option key={d}>{d}</option>)}</select><span className="subtle tiny">{filtered.length} kelas ditemukan</span></div>
+ <div className="class-grid">{filtered.map(c=>{const progress=Math.round(c.initial_meeting_count/c.rps_target_meetings*100);const link=`/kelas/${c.id}`;return <article className="class-card" key={c.id}><div className="class-card-top"><span className="course-code">{c.courses.course_code} <span className="subtle">/ {c.class_code}</span></span><ValidationStatus kaprodi={c.rps_validated_kaprodi} dekan={c.rps_validated_dekan}/></div>
+ <h3 className="course-title">{c.courses.name_id}</h3><div className="class-meta"><div><i className="bi bi-person"/>{c.lecturer_directory.full_name}</div><div><i className="bi bi-calendar3"/>{c.schedule_day}, {c.start_time.slice(0,5)} – {c.end_time.slice(0,5)} WIB</div><div><i className="bi bi-geo-alt"/>{c.room_name}</div></div>
+ <div style={{display:"flex",justifyContent:"space-between",marginTop:3,fontSize:11}}><span className="subtle">Pertemuan (rekap PRD)</span><strong>{c.initial_meeting_count}/{c.rps_target_meetings}</strong></div><Progress value={progress}/>
+ <div className="class-card-bottom"><Tag kind="neutral">{c.courses.sks_total} SKS</Tag>{preview?<button className="section-link" style={{border:0,background:"none",cursor:"pointer"}} onClick={()=>onSelect?.(c.id)}>Detail Kelas <i className="bi bi-arrow-up-right"/></button>:<Link className="section-link" href={link}>Detail Kelas <i className="bi bi-arrow-up-right"/></Link>}</div></article>;})}</div>
+ {filtered.length===0&&<Empty icon="search" title="Tidak ada kelas" message="Ubah kata kunci pencarian atau filter hari."/>}</>;
+}

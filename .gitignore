@@ -1,0 +1,22 @@
+node_modules/
+.next/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+
+# NEVER commit credentials, local DB files, backups, or provider keys
+.env*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+*.sqlite
+*.db
+.supabase/
+.vercel/
+*.sql.gz

@@ -1,0 +1,2 @@
+import {sessionContext} from "@/lib/auth";import {readNotifications} from "@/lib/data";import {SectionHead} from "@/components/UI";import {NotificationCenter} from "@/components/NotificationCenter";
+export default async function NotificationsPage(){const {db,profile}=await sessionContext();const rows=await readNotifications(db,profile.id);return <><SectionHead eyebrow="PUSAT KOMUNIKASI" title="Notifikasi Akademik" subtitle="Pengumuman jadwal, kelas aktif, validasi RPS, dan pengingat otomatis."/><NotificationCenter initial={rows} userId={profile.id}/></>;}

@@ -1,0 +1,3 @@
+import {NextResponse} from "next/server";
+import {z} from "zod";import {apiSession,boundedJson} from "@/lib/security/api-session";import {apiError} from "@/lib/api";import {plainText} from "@/lib/security/sanitize";
+export async function POST(req:Request){try{const {db}=await apiSession(["dosen"]);const v=z.object({meetingId:z.uuid(),summary:z.string().min(10).max(2000)}).parse(await boundedJson(req));const {error}=await db.rpc("update_meeting_summary",{p_meeting_id:v.meetingId,p_summary:plainText(v.summary)});if(error)throw new Error(error.message);return NextResponse.json({ok:true});}catch(e){return apiError(e);}}

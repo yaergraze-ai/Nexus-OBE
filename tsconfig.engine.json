@@ -1,0 +1,6 @@
+{
+  "extends":"./tsconfig.json",
+  "compilerOptions":{"jsx":"react-jsx","noEmit":true,"types":[],"incremental":false},
+  "include":["src/types/domain.ts","src/lib/utils/grade-calculator.ts","src/lib/demo-data.ts"],
+  "exclude":["node_modules"]
+}

@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function NotFound(){return <main style={{minHeight:"100vh",display:"grid",placeItems:"center",padding:30,textAlign:"center"}}><div><h1 style={{fontSize:64,color:"#8b0000",marginBottom:8}}>404</h1><h2>Halaman tidak ditemukan</h2><p className="subtle">Alamat atau data yang diminta tidak tersedia.</p><Link href="/" className="btn btn-primary">Kembali ke Dashboard</Link></div></main>;}

@@ -1,0 +1,3 @@
+import {NextResponse} from "next/server";
+import {apiSession,boundedJson} from "@/lib/security/api-session";import {subscriptionSchema} from "@/lib/validators";import {apiError} from "@/lib/api";
+export async function POST(req:Request){try{const {db,user}=await apiSession();const v=subscriptionSchema.parse(await boundedJson(req,5000));const {error}=await db.from("push_subscriptions").upsert({user_id:user.id,endpoint:v.endpoint,p256dh:v.keys.p256dh,auth:v.keys.auth},{onConflict:"endpoint"});if(error)throw new Error(error.message);return NextResponse.json({ok:true});}catch(e){return apiError(e);}}
