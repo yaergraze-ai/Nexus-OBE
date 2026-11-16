@@ -134,7 +134,6 @@ export async function middleware(request: NextRequest) {
 
   const restrict: [string, string[]][] = [
     ["/krs", ["admin", "super_admin"]],
-    ["/nilai", ["dosen", "admin", "super_admin"]],
     ["/rps-review", ["admin", "super_admin"]],
     ["/pengguna", ["super_admin"]],
     ["/audit", ["super_admin"]],

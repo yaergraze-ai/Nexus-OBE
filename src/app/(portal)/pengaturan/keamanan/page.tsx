@@ -3,4 +3,4 @@ import {SectionHead} from "@/components/UI";
 import {MfaSettings} from "@/components/MfaSettings";
 import {AccountSecurity} from "@/components/AccountSecurity";
 import {EmailSettingsCard} from "@/components/EmailSettingsCard";
-export default async function SecurityPage(){const {profile}=await sessionContext();return <><SectionHead eyebrow="AKUN AMAN" title="Keamanan akun" subtitle="Kelola email OTP, sandi, akun Google yang terhubung, serta verifikasi dua langkah."/><div style={{marginBottom:20}}><EmailSettingsCard currentEmail={profile.email}/></div><div style={{marginBottom:20}}><AccountSecurity/></div><MfaSettings role={profile.role}/></>}
+export default async function SecurityPage(){const {profile}=await sessionContext();return <><SectionHead eyebrow="AKUN AMAN" title="Keamanan akun" subtitle="Kelola email OTP, sandi, akun Google yang terhubung, serta verifikasi dua langkah."/><div style={{marginBottom:20}}><EmailSettingsCard currentEmail={profile.email}/></div><div style={{marginBottom:20}}><AccountSecurity currentEmail={profile.email}/></div><MfaSettings role={profile.role}/></>}

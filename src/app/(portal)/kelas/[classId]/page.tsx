@@ -19,7 +19,7 @@ import { MeetingTasks } from "@/components/MeetingTasks";
 import { ActionButton } from "@/components/ActionButton";
 import { calculateFinal } from "@/lib/utils/grade-calculator";
 import type { Profile } from "@/types/domain";
-import type { Submission } from "@/types/coursework";
+import type { Submission, SubmissionStat } from "@/types/coursework";
 
 type AttStatus = "HADIR" | "IZIN" | "SAKIT" | "ALPHA";
 
@@ -70,7 +70,7 @@ export default async function ClassDetail({
   const meetingIds = meetings.map((m) => m.id);
   const taskIds = classTasks.map((t) => t.id);
 
-  const [{ data: attendanceRows }, { data: mySubs }] = await Promise.all([
+  const [{ data: attendanceRows }, { data: subRows }] = await Promise.all([
     meetingIds.length && profile.role === "mahasiswa"
       ? db
           .from("attendances")
@@ -89,8 +89,29 @@ export default async function ClassDetail({
           .select("*")
           .eq("student_id", profile.id)
           .in("assignment_id", taskIds)
-      : Promise.resolve({ data: [] }),
+      : taskIds.length && manageRoster
+        ? db
+            .from("assignment_submissions")
+            .select("assignment_id,status,score")
+            .in("assignment_id", taskIds)
+        : Promise.resolve({ data: [] }),
   ]);
+
+  const submissionStats: Record<string, SubmissionStat> = {};
+  if (manageRoster) {
+    for (const s of (subRows ?? []) as {
+      assignment_id: string;
+      status: string;
+      score: number | null;
+    }[]) {
+      if (s.status !== "SUBMITTED") continue;
+      const prev = submissionStats[s.assignment_id] ?? { total: 0, ungraded: 0, graded: 0 };
+      prev.total += 1;
+      if (s.score == null) prev.ungraded += 1;
+      else prev.graded += 1;
+      submissionStats[s.assignment_id] = prev;
+    }
+  }
 
   const myAttendanceMap = new Map<string, AttStatus>();
   const rosterAttendanceMap = new Map<string, Record<string, AttStatus>>();
@@ -109,7 +130,7 @@ export default async function ClassDetail({
   }
 
   const attended = new Set(myAttendanceMap.keys());
-  const submissions = (mySubs ?? []) as Submission[];
+  const submissions = profile.role === "mahasiswa" ? ((subRows ?? []) as Submission[]) : [];
   const photos = await Promise.all(
     meetings.map(async (m) =>
       m.documentation_photo_path
@@ -322,6 +343,7 @@ export default async function ClassDetail({
                         meetingNumber={m.meeting_number}
                         tasks={meetingTasks}
                         submissions={submissions}
+                        submissionStats={submissionStats}
                         currentUserId={profile.id}
                         role={profile.role}
                         canAdd={canAddTask}

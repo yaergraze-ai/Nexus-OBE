@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Role } from "@/types/domain";
-import type { Assignment, Submission, TaskComponent } from "@/types/coursework";
+import type { Assignment, Submission, SubmissionStat, TaskComponent } from "@/types/coursework";
 import { COMPONENT_LABEL } from "@/types/coursework";
 import { postJson } from "@/lib/utils/request";
 import { dateTimeWib, wibInput, wibToIso } from "@/lib/utils/wib";
@@ -76,6 +76,7 @@ export function MeetingTasks({
   meetingNumber,
   tasks,
   submissions,
+  submissionStats = {},
   currentUserId,
   role,
   canAdd,
@@ -86,6 +87,7 @@ export function MeetingTasks({
   meetingNumber: number;
   tasks: Assignment[];
   submissions: Submission[];
+  submissionStats?: Record<string, SubmissionStat>;
   currentUserId: string;
   role: Role;
   canAdd: boolean;
@@ -93,6 +95,7 @@ export function MeetingTasks({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [component, setComponent] = useState<TaskComponent>("daily_task");
@@ -103,6 +106,7 @@ export function MeetingTasks({
   const [error, setError] = useState("");
 
   const openForm = () => {
+    setEditingId(null);
     setTitle(`Tugas Pertemuan ${meetingNumber} — `);
     setDescription("");
     setComponent("daily_task");
@@ -113,6 +117,18 @@ export function MeetingTasks({
     setOpen((prev) => !prev);
   };
 
+  const openEdit = (t: Assignment) => {
+    setEditingId(t.id);
+    setTitle(t.title);
+    setDescription(t.description);
+    setComponent(t.component);
+    setLinkUrl(t.resource_links[0] ?? "");
+    setDue(wibInput(t.due_at));
+    setAcceptLate(t.accept_late);
+    setError("");
+    setOpen(true);
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -121,7 +137,7 @@ export function MeetingTasks({
       const dueAt = wibToIso(due);
       const links = linkUrl.trim() ? [linkUrl.trim()] : [];
       await postJson("/api/assignments", {
-        id: null,
+        id: editingId,
         classId,
         meetingId,
         title: title.trim(),
@@ -132,6 +148,7 @@ export function MeetingTasks({
         acceptLate,
       });
       setOpen(false);
+      setEditingId(null);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal menyimpan tugas pertemuan.");
@@ -265,8 +282,9 @@ export function MeetingTasks({
         <div className="ref-list">
           {tasks.map((t) => {
             const own = submissions.find((s) => s.assignment_id === t.id);
+            const stat = submissionStats[t.id];
             const expired = new Date(t.due_at) <= new Date();
-            const canDelete = canManageAll || t.author_id === currentUserId;
+            const canEditOrDelete = canManageAll || t.author_id === currentUserId;
             return (
               <div className="ref-item" key={t.id}>
                 <div className="ref-item-head" style={{ flexWrap: "wrap" }}>
@@ -280,6 +298,7 @@ export function MeetingTasks({
                     </Link>
                     <div className="tiny subtle" style={{ marginTop: 2 }}>
                       {COMPONENT_LABEL[t.component]} · Tenggat {dateTimeWib(t.due_at)}
+                      {t.profiles ? ` · Oleh ${t.profiles.full_name} (${t.profiles.role === "mahasiswa" ? "Mahasiswa" : "Dosen"})` : ""}
                     </div>
                   </div>
                   <div className="chip-row" style={{ gap: 6 }}>
@@ -304,7 +323,13 @@ export function MeetingTasks({
                               : "Belum dikumpulkan"}
                       </Tag>
                     ) : (
-                      <Tag kind="blue">Tugas Kelas</Tag>
+                      <Tag kind={stat?.ungraded ? "warn" : stat?.total ? "good" : "blue"}>
+                        {stat?.ungraded
+                          ? `${stat.ungraded} Perlu Dinilai (${stat.total} masuk)`
+                          : stat?.total
+                            ? `${stat.total} Terkumpul`
+                            : "Tugas Kelas"}
+                      </Tag>
                     )}
                   </div>
                 </div>
@@ -327,7 +352,16 @@ export function MeetingTasks({
                         : "Kerjakan & Kumpulkan"
                       : "Lihat & Nilai"}
                   </Link>
-                  {canDelete && (
+                  {canEditOrDelete && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => openEdit(t)}
+                    >
+                      <i className="bi bi-pencil" /> Ubah
+                    </button>
+                  )}
+                  {canEditOrDelete && (
                     <DeleteAssignmentButton assignmentId={t.id} compact />
                   )}
                 </div>

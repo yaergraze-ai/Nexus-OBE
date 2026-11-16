@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { AcademicClass, Meeting, Role } from "@/types/domain";
-import type { Assignment, Submission, TaskComponent } from "@/types/coursework";
+import type { Assignment, Submission, SubmissionStat, TaskComponent } from "@/types/coursework";
 import { COMPONENT_LABEL } from "@/types/coursework";
 import { dateTimeWib, wibInput, wibToIso } from "@/lib/utils/wib";
 import { postJson } from "@/lib/utils/request";
@@ -20,6 +20,7 @@ export function TaskBoard({
   classes,
   meetings = [],
   submissions,
+  submissionStats = {},
   role,
   currentUserId,
   initialClassId = "",
@@ -28,6 +29,7 @@ export function TaskBoard({
   classes: AcademicClass[];
   meetings?: Meeting[];
   submissions: Submission[];
+  submissionStats?: Record<string, SubmissionStat>;
   role: Role;
   currentUserId: string;
   initialClassId?: string;
@@ -47,6 +49,7 @@ export function TaskBoard({
   const [error, setError] = useState("");
 
   const [filterClassId, setFilterClassId] = useState(initialClassId);
+  const [taskFilter, setTaskFilter] = useState<"all" | "ungraded" | "student_authored">("all");
   const [search, setSearch] = useState("");
 
   const canCreate = (role === "dosen" || role === "mahasiswa" || role === "admin" || role === "super_admin") && classes.length > 0;
@@ -64,13 +67,15 @@ export function TaskBoard({
     const q = search.trim().toLowerCase();
     return assignments.filter((a) => {
       if (filterClassId && a.class_id !== filterClassId) return false;
+      if (canManageClass && taskFilter === "ungraded" && (submissionStats[a.id]?.ungraded ?? 0) === 0) return false;
+      if (canManageClass && taskFilter === "student_authored" && a.profiles?.role !== "mahasiswa") return false;
       if (!q) return true;
-      return [a.title, a.description, a.classes?.class_code, a.classes?.courses?.name_id]
+      return [a.title, a.description, a.classes?.class_code, a.classes?.courses?.name_id, a.profiles?.full_name]
         .join(" ")
         .toLowerCase()
         .includes(q);
     });
-  }, [assignments, filterClassId, search]);
+  }, [assignments, canManageClass, filterClassId, search, submissionStats, taskFilter]);
 
   const add = () => {
     const defaultClass = filterClassId || classes[0]?.id || "";
@@ -153,6 +158,31 @@ export function TaskBoard({
               </option>
             ))}
           </select>
+          {canManageClass && (
+            <div className="chip-row" role="group" aria-label="Filter status tugas">
+              <button
+                type="button"
+                className={`btn btn-sm ${taskFilter === "all" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setTaskFilter("all")}
+              >
+                Semua ({assignments.length})
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${taskFilter === "ungraded" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setTaskFilter("ungraded")}
+              >
+                Perlu Dinilai
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${taskFilter === "student_authored" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setTaskFilter("student_authored")}
+              >
+                Dibuat Mahasiswa
+              </button>
+            </div>
+          )}
         </div>
         {canCreate && (
           <button type="button" className="btn btn-primary" onClick={add}>
@@ -323,6 +353,7 @@ export function TaskBoard({
       <div className="assignment-grid">
         {visibleAssignments.map((a) => {
           const own = submissions.find((s) => s.assignment_id === a.id);
+          const stat = submissionStats[a.id];
           const expired = new Date(a.due_at) <= new Date();
           const isOwnerOrManager = canManageClass || a.author_id === currentUserId;
           return (
@@ -340,25 +371,35 @@ export function TaskBoard({
                   </Link>
                 )}
                 <Tag kind="neutral">{COMPONENT_LABEL[a.component]}</Tag>
-                <Tag
-                  kind={
-                    own?.score != null
-                      ? "good"
+                {canManageClass ? (
+                  <Tag kind={stat?.ungraded ? "warn" : stat?.total ? "good" : "neutral"}>
+                    {stat?.ungraded
+                      ? `${stat.ungraded} Perlu Dinilai`
+                      : stat?.total
+                        ? `${stat.total} Terkumpul`
+                        : "Menunggu Kiriman"}
+                  </Tag>
+                ) : (
+                  <Tag
+                    kind={
+                      own?.score != null
+                        ? "good"
+                        : expired && !a.accept_late
+                          ? "bad"
+                          : own?.status === "SUBMITTED"
+                            ? "good"
+                            : "warn"
+                    }
+                  >
+                    {own?.score != null
+                      ? `Nilai ${own.score}`
                       : expired && !a.accept_late
-                        ? "bad"
+                        ? "Ditutup"
                         : own?.status === "SUBMITTED"
-                          ? "good"
-                          : "warn"
-                  }
-                >
-                  {own?.score != null
-                    ? `Nilai ${own.score}`
-                    : expired && !a.accept_late
-                      ? "Ditutup"
-                      : own?.status === "SUBMITTED"
-                        ? "Dikumpulkan"
-                        : "Terbuka"}
-                </Tag>
+                          ? "Dikumpulkan"
+                          : "Terbuka"}
+                  </Tag>
+                )}
               </div>
               <h2 style={{ margin: "14px 0 6px" }}>
                 <Link href={`/tugas/${a.id}`} className="crumb-link" style={{ color: "var(--ink)" }}>
@@ -369,19 +410,29 @@ export function TaskBoard({
                 <Link href={`/kelas/${a.class_id}`} className="crumb-link">
                   {a.classes?.courses?.name_id}
                 </Link>
+                {a.profiles ? ` · Oleh ${a.profiles.full_name} (${a.profiles.role === "mahasiswa" ? "Mahasiswa" : "Dosen"})` : ""}
               </p>
               <p className="task-summary">{a.description}</p>
               <div className="stat-line">
                 <span>Tenggat</span>
                 <strong>{dateTimeWib(a.due_at)}</strong>
               </div>
-              {own && (
+              {canManageClass ? (
                 <div className="stat-line">
-                  <span>Revisi / Nilai</span>
+                  <span>Pengumpulan / Dinilai</span>
                   <strong>
-                    v{own.revision} · {own.score == null ? "Belum dinilai" : `${own.score}/100`}
+                    {stat?.total ?? 0} terkumpul · {stat?.graded ?? 0} dinilai
                   </strong>
                 </div>
+              ) : (
+                own && (
+                  <div className="stat-line">
+                    <span>Revisi / Nilai</span>
+                    <strong>
+                      v{own.revision} · {own.score == null ? "Belum dinilai" : `${own.score}/100`}
+                    </strong>
+                  </div>
+                )
               )}
               <div className="form-actions">
                 <Link href={`/tugas/${a.id}`} className="btn btn-primary btn-sm">

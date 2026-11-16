@@ -1,62 +1,496 @@
 import Link from "next/link";
-import type {AcademicClass,Notification,Profile,Role} from "@/types/domain";
-import {Metric,Tag,Progress} from "@/components/UI";
-import {NextClassCountdown} from "@/components/NextClassCountdown";
-import {LecturerPasswordCard} from "@/components/LecturerPasswordCard";
-import type {Meeting} from "@/types/domain";
-import type {Announcement,Assignment} from "@/types/coursework";
-export interface DashboardInsight {label:string;value:number|string;description:string;href:string;icon:string;}
-const ROLE_QUICK_ACTIONS:Record<Role,{label:string;href:string;icon:string}[]>={
- mahasiswa:[
-  {label:"Buka Kelas & Pertemuan",href:"/kelas",icon:"journal-bookmark-fill"},
-  {label:"Tugas & Upload File",href:"/tugas",icon:"clipboard2-check"},
-  {label:"Jadwal Kuliah",href:"/jadwal",icon:"calendar3"},
-  {label:"Profil & Ganti PP",href:"/pengaturan",icon:"person-gear"},
- ],
- dosen:[
-  {label:"Kelas & Pertemuan",href:"/kelas",icon:"journal-bookmark-fill"},
-  {label:"Kelola & Nilai Tugas",href:"/tugas",icon:"clipboard2-check"},
-  {label:"Input Nilai PAP",href:"/nilai",icon:"clipboard2-data"},
-  {label:"Buat Pengumuman",href:"/pengumuman",icon:"megaphone"},
-  {label:"Pengaturan & Email",href:"/pengaturan",icon:"gear-fill"},
- ],
- admin:[
-  {label:"Kelola Peserta KRS",href:"/krs",icon:"people"},
-  {label:"Validasi RPS",href:"/rps-review",icon:"patch-check-fill"},
-  {label:"Cek Bentrok Jadwal",href:"/jadwal",icon:"calendar3"},
-  {label:"Input Nilai Kelas",href:"/nilai",icon:"clipboard2-data"},
-  {label:"Buat Pengumuman",href:"/pengumuman",icon:"megaphone"},
- ],
- super_admin:[
-  {label:"Manajemen Pengguna",href:"/pengguna",icon:"people-fill"},
-  {label:"Audit Sistem",href:"/audit",icon:"shield-lock-fill"},
-  {label:"Kelola Peserta KRS",href:"/krs",icon:"people"},
-  {label:"Validasi RPS",href:"/rps-review",icon:"patch-check-fill"},
-  {label:"Jadwal & Bentrok",href:"/jadwal",icon:"calendar3"},
- ],
+import type { AcademicClass, Meeting, Notification, Profile, Role } from "@/types/domain";
+import { Metric, Tag, Progress } from "@/components/UI";
+import { NextClassCountdown } from "@/components/NextClassCountdown";
+import { LecturerPasswordCard } from "@/components/LecturerPasswordCard";
+import type { Announcement, Assignment } from "@/types/coursework";
+
+export interface DashboardInsight {
+  label: string;
+  value: number | string;
+  description: string;
+  href: string;
+  icon: string;
+}
+
+export type DashboardTaskPreview = Pick<
+  Assignment,
+  "id" | "title" | "due_at" | "class_id"
+> & {
+  profiles?: { full_name: string; role: Role } | null;
 };
-const dayNames=["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
-function todayWib(){const now=new Date();const day=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Jakarta",weekday:"long"}).format(now);return ({Sunday:"Minggu",Monday:"Senin",Tuesday:"Selasa",Wednesday:"Rabu",Thursday:"Kamis",Friday:"Jumat",Saturday:"Sabtu"} as Record<string,string>)[day]||dayNames[now.getDay()];}
-export function Dashboard({profile,classes,notifications=[],preview=false,onClass,ips,liveMeetings=[],insights=[],announcements=[],recentTasks=[],actualSessions,mustChangePassword=false,needsMfa=false}:{profile:Profile;classes:AcademicClass[];notifications?:Notification[];preview?:boolean;onClass?:(id:string)=>void;ips?:number|null;liveMeetings?:Meeting[];insights?:DashboardInsight[];announcements?:Announcement[];recentTasks?:Pick<Assignment,"id"|"title"|"due_at"|"class_id">[];actualSessions?:number;mustChangePassword?:boolean;needsMfa?:boolean}){
- const todays=classes.filter(c=>c.schedule_day===todayWib()).sort((a,b)=>a.start_time.localeCompare(b.start_time));
- const validated=classes.filter(c=>c.rps_validated_kaprodi&&c.rps_validated_dekan).length;
- const sessions=actualSessions??classes.reduce((s,c)=>s+c.initial_meeting_count,0);
- const totalSks=classes.reduce((s,c)=>s+c.courses.sks_total,0);
- return <>
- <div className="sectionhead"><div><span className="kicker"><i className="bi bi-stars"/>OVERVIEW AKADEMIK</span><h1>Dashboard {profile.role==="super_admin"?"Super Admin":profile.role==="admin"?"Admin":profile.role==="dosen"?"Dosen":"Mahasiswa"}</h1><p>Semester Ganjil · Tahun Akademik 2026/2027</p></div><Tag kind="neutral"><i className="bi bi-calendar3"/> TA 2026/2027</Tag></div>
- {!preview&&profile.role==="dosen"&&mustChangePassword&&<div style={{marginBottom:20}}><LecturerPasswordCard identityNumber={profile.identity_number} needsMfa={needsMfa}/></div>}
- {!preview&&liveMeetings.length>0&&<Link href={`/kelas/${liveMeetings[0].class_id}`} className="notice" style={{marginBottom:18,background:"#fff0f0",borderColor:"#f5caca"}}><i className="bi bi-broadcast"/><div><strong>SESI LIVE — Kelas sedang berlangsung</strong><p>{liveMeetings.length} sesi terbuka. Klik untuk buka kelas dan presensi mandiri →</p></div></Link>}
- {preview&&liveMeetings.length>0&&<div className="notice" style={{marginBottom:18,background:"#fff0f0",borderColor:"#f5caca"}}><i className="bi bi-broadcast"/><div><strong>SESI LIVE — Kelas sedang berlangsung</strong><p>{liveMeetings.length} sesi terbuka. Buka detail kelas untuk presensi mandiri.</p></div></div>}
- <section className="hero"><div className="hero-copy"><span className="hero-brow">NEXUS OBE · AKADEMIK TERPADU</span><h1>Selamat datang, {profile.full_name.split(" ")[0]}! <span style={{fontWeight:450}}>👋</span></h1><p>{profile.role==="mahasiswa"?"Kelola aktivitas kuliah, pantau presensi langsung, dan ikuti capaian pembelajaran dalam satu tempat.":profile.role==="dosen"?"Pantau kelas yang diampu, buka pertemuan secara langsung, dan kelola hasil belajar mahasiswa.":"Pantau jalannya semester, validasi kurikulum, dan pastikan setiap kelas berjalan sesuai standar OBE."}</p></div><div className="hero-decor"><i className="bi bi-mortarboard-fill"/></div></section>
- <div style={{margin:"-11px 0 19px",padding:"11px 16px",border:"1px solid var(--line)",borderRadius:10,background:"white"}}><NextClassCountdown classes={classes}/></div>
- <div className="metrics"><Metric icon="journal-bookmark-fill" label="Mata Kuliah" value={classes.length} note="Terdaftar semester aktif"/><Metric icon="layers" label="Total SKS" value={totalSks} note="Beban kredit keseluruhan"/><Metric icon="patch-check-fill" label="RPS Tervalidasi" value={`${validated}/${classes.length}`} note="Disetujui Kaprodi & Dekan"/>{profile.role==="mahasiswa"&&!preview?<Metric icon="graph-up-arrow" label="IPS Sementara" value={ips==null?"—":ips.toFixed(2)} note="Dari mata kuliah yang sudah dinilai"/>:<Metric icon="calendar-check" label="Pertemuan Tercatat" value={sessions} note={actualSessions===undefined?"Rekap awal sesuai PRD":"Sesi tercatat di database"}/>}</div>
- {!preview&&insights.length>0&&<section className="role-overview"><div className="panelhead"><h2>Ruang Kerja {profile.role==="mahasiswa"?"Mahasiswa":profile.role==="dosen"?"Dosen":profile.role==="admin"?"Admin Akademik":"Super Admin"}</h2></div><div className="chip-row" style={{marginBottom:14}}>{ROLE_QUICK_ACTIONS[profile.role].map(action=><Link key={action.href} href={action.href} className="btn btn-secondary btn-sm"><i className={`bi bi-${action.icon}`}/> {action.label}</Link>)}</div><div className="role-insight-grid">{insights.map(s=><Link href={s.href} key={s.label} className="role-insight"><div className="class-mini-icon"><i className={`bi bi-${s.icon}`}/></div><div><span>{s.label}</span><strong>{s.value}</strong><small>{s.description}</small></div><i className="bi bi-arrow-up-right" aria-hidden="true"/></Link>)}</div></section>}
- {!preview&&recentTasks.length>0&&<section className="panel" style={{marginBottom:22}}><div className="panelhead"><h2><i className="bi bi-clipboard2-check" style={{color:"var(--wine)",marginRight:9}}/>Tugas Kelas &amp; Pertemuan</h2><Link href="/tugas" className="section-link">Semua tugas ({recentTasks.length}+)</Link></div><div className="announcement-preview">{recentTasks.map(t=><Link key={t.id} href={`/tugas/${t.id}`} className="announcement-preview-row"><div><strong>{t.title}</strong><p>Tenggat {new Date(t.due_at).toLocaleString("id-ID",{timeZone:"Asia/Jakarta",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})} WIB</p></div><i className="bi bi-chevron-right"/></Link>)}</div></section>}
- {!preview&&announcements.length>0&&<section className="panel" style={{marginBottom:22}}><div className="panelhead"><h2><i className="bi bi-megaphone" style={{color:"var(--wine)",marginRight:9}}/>Pengumuman Terbaru</h2><Link href="/pengumuman" className="section-link">Lihat semua</Link></div><div className="announcement-preview">{announcements.map(a=><Link key={a.id} href="/pengumuman" className="announcement-preview-row"><div><strong>{a.title}</strong><p>{a.body}</p></div><i className="bi bi-chevron-right"/></Link>)}</div></section>}
- <div className="two-col"><section className="panel"><div className="panelhead"><h2><i className="bi bi-calendar3" style={{color:"var(--wine)",marginRight:9}}/>Jadwal Kuliah Hari Ini</h2>{!preview&&<Link href="/jadwal" className="section-link">Lihat jadwal <i className="bi bi-arrow-right"/></Link>}</div>
- {todays.length?todays.map(c=><div className="class-row" key={c.id}><div className="class-mini-icon"><i className="bi bi-journal-text"/></div><div className="class-row-info">{preview?<button style={{border:0,background:"none",textAlign:"left",padding:0,cursor:"pointer"}} onClick={()=>onClass?.(c.id)}><strong>{c.courses.name_id}</strong></button>:<Link href={`/kelas/${c.id}`}><strong>{c.courses.name_id}</strong></Link>}<span>{c.class_code} · {c.room_name}</span></div><div className="class-time"><strong>{c.start_time.slice(0,5)} – {c.end_time.slice(0,5)}</strong><span>WIB</span></div><i className="bi bi-chevron-right right-arrow"/></div>):<div className="empty" style={{padding:"28px 16px"}}><i className="bi bi-cup-hot"/><h3>Tidak ada jadwal hari ini</h3><p>Jadwal kelas berikutnya bisa dilihat pada kalender akademik.</p></div>}</section>
- <div className="stack"><section className="panel"><div className="panelhead"><h2><i className="bi bi-broadcast" style={{color:"var(--wine)",marginRight:9}}/>Status Semester</h2><Tag kind="blue">Ganjil 2026/2027</Tag></div><div className="stat-line"><span>Fakultas</span><strong>Teknik</strong></div><div className="stat-line"><span>Program studi</span><strong>Teknik Informatika</strong></div><div className="stat-line"><span>RPS tervalidasi</span><strong>{validated} dari {classes.length}</strong></div><div style={{marginTop:15}}><Progress value={classes.length?validated/classes.length*100:0}/></div></section>
- <section className="panel"><div className="panelhead"><h2><i className="bi bi-bell-fill" style={{color:"var(--wine)",marginRight:9}}/>Informasi & Pengingat</h2>{!preview&&<Link href="/notifikasi" className="section-link">Semua</Link>}</div>
- {notifications.length?notifications.slice(0,3).map(n=><div key={n.id} className="notify-row"><span className="dot"/><div><strong>{n.title}</strong><p>{n.message}</p></div></div>):<div className="notice"><i className="bi bi-info-circle"/><div><strong>Informasi akademik</strong><p>Presensi baru aktif setelah dosen membuka sesi. Kelas dengan RPS belum valid tetap terkunci.</p></div></div>}</section></div></div>
- </>;
+
+const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+
+function todayWib() {
+  const now = new Date();
+  const day = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jakarta",
+    weekday: "long",
+  }).format(now);
+  return (
+    (
+      {
+        Sunday: "Minggu",
+        Monday: "Senin",
+        Tuesday: "Selasa",
+        Wednesday: "Rabu",
+        Thursday: "Kamis",
+        Friday: "Jumat",
+        Saturday: "Sabtu",
+      } as Record<string, string>
+    )[day] || dayNames[now.getDay()]
+  );
+}
+
+export function Dashboard({
+  profile,
+  classes,
+  notifications = [],
+  preview = false,
+  onClass,
+  ips,
+  liveMeetings = [],
+  insights = [],
+  announcements = [],
+  recentTasks = [],
+  actualSessions,
+  mustChangePassword = false,
+  needsMfa = false,
+}: {
+  profile: Profile;
+  classes: AcademicClass[];
+  notifications?: Notification[];
+  preview?: boolean;
+  onClass?: (id: string) => void;
+  ips?: number | null;
+  liveMeetings?: Meeting[];
+  insights?: DashboardInsight[];
+  announcements?: Announcement[];
+  recentTasks?: DashboardTaskPreview[];
+  actualSessions?: number;
+  mustChangePassword?: boolean;
+  needsMfa?: boolean;
+}) {
+  const todays = classes
+    .filter((c) => c.schedule_day === todayWib())
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const validated = classes.filter(
+    (c) => c.rps_validated_kaprodi && c.rps_validated_dekan
+  ).length;
+  const sessions =
+    actualSessions ?? classes.reduce((s, c) => s + c.initial_meeting_count, 0);
+  const totalSks = classes.reduce((s, c) => s + Number(c.courses.sks_total), 0);
+
+  const rpsHref = preview
+    ? undefined
+    : profile.role === "admin" || profile.role === "super_admin"
+      ? "/rps-review"
+      : classes[0]
+        ? `/kelas/${classes[0].id}/rps`
+        : "/kelas";
+
+  return (
+    <>
+      <div className="sectionhead">
+        <div>
+          <span className="kicker">
+            <i className="bi bi-stars" />
+            OVERVIEW AKADEMIK
+          </span>
+          <h1>
+            Dashboard{" "}
+            {profile.role === "super_admin"
+              ? "Super Admin"
+              : profile.role === "admin"
+                ? "Admin"
+                : profile.role === "dosen"
+                  ? "Dosen"
+                  : "Mahasiswa"}
+          </h1>
+          <p>Semester Ganjil · Tahun Akademik 2026/2027</p>
+        </div>
+        <Tag kind="neutral">
+          <i className="bi bi-calendar3" /> TA 2026/2027
+        </Tag>
+      </div>
+
+      {!preview && profile.role === "dosen" && mustChangePassword && (
+        <div style={{ marginBottom: 20 }}>
+          <LecturerPasswordCard
+            identityNumber={profile.identity_number}
+            needsMfa={needsMfa}
+          />
+        </div>
+      )}
+
+      {!preview && liveMeetings.length > 0 && (
+        <Link
+          href={`/kelas/${liveMeetings[0].class_id}`}
+          className="notice"
+          style={{
+            marginBottom: 18,
+            background: "#fff0f0",
+            borderColor: "#f5caca",
+          }}
+        >
+          <i className="bi bi-broadcast" />
+          <div>
+            <strong>SESI LIVE — Kelas sedang berlangsung</strong>
+            <p>
+              {liveMeetings.length} sesi terbuka. Klik untuk buka kelas dan
+              presensi mandiri →
+            </p>
+          </div>
+        </Link>
+      )}
+      {preview && liveMeetings.length > 0 && (
+        <div
+          className="notice"
+          style={{
+            marginBottom: 18,
+            background: "#fff0f0",
+            borderColor: "#f5caca",
+          }}
+        >
+          <i className="bi bi-broadcast" />
+          <div>
+            <strong>SESI LIVE — Kelas sedang berlangsung</strong>
+            <p>
+              {liveMeetings.length} sesi terbuka. Buka detail kelas untuk presensi
+              mandiri.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <section className="hero">
+        <div className="hero-copy">
+          <span className="hero-brow">NEXUS OBE · AKADEMIK TERPADU</span>
+          <h1>
+            Selamat datang, {profile.full_name.split(" ")[0]}!{" "}
+            <span style={{ fontWeight: 450 }}>👋</span>
+          </h1>
+          <p>
+            {profile.role === "mahasiswa"
+              ? "Kelola aktivitas kuliah, pantau presensi langsung, dan ikuti capaian pembelajaran dalam satu tempat."
+              : profile.role === "dosen"
+                ? "Pantau kelas yang diampu, buka pertemuan secara langsung, dan kelola hasil belajar mahasiswa."
+                : "Pantau jalannya semester, validasi kurikulum, dan pastikan setiap kelas berjalan sesuai standar OBE."}
+          </p>
+        </div>
+        <div className="hero-decor">
+          <i className="bi bi-mortarboard-fill" />
+        </div>
+      </section>
+
+      <div
+        style={{
+          margin: "-11px 0 19px",
+          padding: "11px 16px",
+          border: "1px solid var(--line)",
+          borderRadius: 10,
+          background: "white",
+        }}
+      >
+        <NextClassCountdown classes={classes} />
+      </div>
+
+      <div className="metrics">
+        <Metric
+          icon="journal-bookmark-fill"
+          label="Mata Kuliah"
+          value={classes.length}
+          note="Lihat daftar kelas aktif"
+          href={preview ? undefined : "/kelas"}
+        />
+        <Metric
+          icon="layers"
+          label="Total SKS"
+          value={`${totalSks} SKS`}
+          note="Rincian SKS & jadwal kuliah"
+          href={preview ? undefined : profile.role === "mahasiswa" ? "/nilai" : "/jadwal"}
+        />
+        <Metric
+          icon="patch-check-fill"
+          label="RPS Tervalidasi"
+          value={`${validated}/${classes.length}`}
+          note={profile.role === "admin" || profile.role === "super_admin" ? "Kelola otorisasi RPS & PBM" : "Lihat matriks CPL & CPMK"}
+          href={rpsHref}
+        />
+        {profile.role === "mahasiswa" && !preview ? (
+          <Metric
+            icon="graph-up-arrow"
+            label="IPS Sementara"
+            value={ips == null ? "Lihat" : ips.toFixed(2)}
+            note={ips == null ? "Klik untuk rincian nilai & SKS" : "Dari mata kuliah yang sudah dinilai"}
+            href="/nilai"
+          />
+        ) : (
+          <Metric
+            icon="calendar-check"
+            label="Pertemuan Tercatat"
+            value={sessions}
+            note={
+              actualSessions === undefined
+                ? "Rekap awal sesuai PRD"
+                : "Buka kelas & pertemuan"
+            }
+            href={preview ? undefined : "/kelas"}
+          />
+        )}
+      </div>
+
+      {!preview && insights.length > 0 && (
+        <section className="role-overview">
+          <div className="panelhead">
+            <h2>
+              Ruang Kerja{" "}
+              {profile.role === "mahasiswa"
+                ? "Mahasiswa"
+                : profile.role === "dosen"
+                  ? "Dosen"
+                  : profile.role === "admin"
+                    ? "Admin Akademik"
+                    : "Super Admin"}
+            </h2>
+          </div>
+          <div className="role-insight-grid">
+            {insights.map((s) => (
+              <Link href={s.href} key={s.label} className="role-insight">
+                <div className="class-mini-icon">
+                  <i className={`bi bi-${s.icon}`} />
+                </div>
+                <div>
+                  <span>{s.label}</span>
+                  <strong>{s.value}</strong>
+                  <small>{s.description}</small>
+                </div>
+                <i className="bi bi-arrow-up-right" aria-hidden="true" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!preview && recentTasks.length > 0 && (
+        <section className="panel" style={{ marginBottom: 22 }}>
+          <div className="panelhead">
+            <h2>
+              <i
+                className="bi bi-clipboard2-check"
+                style={{ color: "var(--wine)", marginRight: 9 }}
+              />
+              Tugas Kelas &amp; Pertemuan Terbaru
+            </h2>
+            <Link href="/tugas" className="section-link">
+              Semua tugas ({recentTasks.length}+)
+            </Link>
+          </div>
+          <div className="announcement-preview">
+            {recentTasks.map((t) => (
+              <Link
+                key={t.id}
+                href={`/tugas/${t.id}`}
+                className="announcement-preview-row"
+              >
+                <div>
+                  <strong>{t.title}</strong>
+                  <p>
+                    {t.profiles ? `Oleh ${t.profiles.full_name} (${t.profiles.role === "mahasiswa" ? "Mahasiswa" : "Dosen"}) · ` : ""}
+                    Tenggat{" "}
+                    {new Date(t.due_at).toLocaleString("id-ID", {
+                      timeZone: "Asia/Jakarta",
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
+                    WIB
+                  </p>
+                </div>
+                <i className="bi bi-chevron-right" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!preview && announcements.length > 0 && (
+        <section className="panel" style={{ marginBottom: 22 }}>
+          <div className="panelhead">
+            <h2>
+              <i
+                className="bi bi-megaphone"
+                style={{ color: "var(--wine)", marginRight: 9 }}
+              />
+              Pengumuman Terbaru
+            </h2>
+            <Link href="/pengumuman" className="section-link">
+              Lihat semua
+            </Link>
+          </div>
+          <div className="announcement-preview">
+            {announcements.map((a) => (
+              <Link
+                key={a.id}
+                href="/pengumuman"
+                className="announcement-preview-row"
+              >
+                <div>
+                  <strong>{a.title}</strong>
+                  <p>{a.body}</p>
+                </div>
+                <i className="bi bi-chevron-right" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="two-col">
+        <section className="panel">
+          <div className="panelhead">
+            <h2>
+              <i
+                className="bi bi-calendar3"
+                style={{ color: "var(--wine)", marginRight: 9 }}
+              />
+              Jadwal Kuliah Hari Ini
+            </h2>
+            {!preview && (
+              <Link href="/jadwal" className="section-link">
+                Lihat jadwal <i className="bi bi-arrow-right" />
+              </Link>
+            )}
+          </div>
+          {todays.length ? (
+            todays.map((c) => (
+              <div className="class-row" key={c.id}>
+                <div className="class-mini-icon">
+                  <i className="bi bi-journal-text" />
+                </div>
+                <div className="class-row-info">
+                  {preview ? (
+                    <button
+                      style={{
+                        border: 0,
+                        background: "none",
+                        textAlign: "left",
+                        padding: 0,
+                        cursor: "pointer",
+                      }}
+                      onClick={() => onClass?.(c.id)}
+                    >
+                      <strong>{c.courses.name_id}</strong>
+                    </button>
+                  ) : (
+                    <Link href={`/kelas/${c.id}`}>
+                      <strong>{c.courses.name_id}</strong>
+                    </Link>
+                  )}
+                  <span>
+                    {c.class_code} · {c.room_name}
+                  </span>
+                </div>
+                <div className="class-time">
+                  <strong>
+                    {c.start_time.slice(0, 5)} – {c.end_time.slice(0, 5)}
+                  </strong>
+                  <span>WIB</span>
+                </div>
+                <i className="bi bi-chevron-right right-arrow" />
+              </div>
+            ))
+          ) : (
+            <div className="empty" style={{ padding: "28px 16px" }}>
+              <i className="bi bi-cup-hot" />
+              <h3>Tidak ada jadwal hari ini</h3>
+              <p>
+                Jadwal kelas berikutnya bisa dilihat pada kalender akademik.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <div className="stack">
+          <section className="panel">
+            <div className="panelhead">
+              <h2>
+                <i
+                  className="bi bi-broadcast"
+                  style={{ color: "var(--wine)", marginRight: 9 }}
+                />
+                Status Semester
+              </h2>
+              <Tag kind="blue">Ganjil 2026/2027</Tag>
+            </div>
+            <div className="stat-line">
+              <span>Fakultas</span>
+              <strong>Teknik</strong>
+            </div>
+            <div className="stat-line">
+              <span>Program studi</span>
+              <strong>Teknik Informatika</strong>
+            </div>
+            <div className="stat-line">
+              <span>Total beban kredit</span>
+              <strong>{totalSks} SKS</strong>
+            </div>
+            <div className="stat-line">
+              <span>RPS tervalidasi</span>
+              <strong>
+                {validated} dari {classes.length}
+              </strong>
+            </div>
+            <div style={{ marginTop: 15 }}>
+              <Progress
+                value={classes.length ? (validated / classes.length) * 100 : 0}
+              />
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panelhead">
+              <h2>
+                <i
+                  className="bi bi-bell-fill"
+                  style={{ color: "var(--wine)", marginRight: 9 }}
+                />
+                Informasi &amp; Pengingat
+              </h2>
+              {!preview && (
+                <Link href="/notifikasi" className="section-link">
+                  Semua
+                </Link>
+              )}
+            </div>
+            {notifications.length ? (
+              notifications.slice(0, 3).map((n) => (
+                <div key={n.id} className="notify-row">
+                  <span className="dot" />
+                  <div>
+                    <strong>{n.title}</strong>
+                    <p>{n.message}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="notice">
+                <i className="bi bi-info-circle" />
+                <div>
+                  <strong>Informasi akademik</strong>
+                  <p>
+                    Presensi baru aktif setelah dosen membuka sesi. Kelas dengan
+                    RPS belum valid tetap terkunci.
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </>
+  );
 }

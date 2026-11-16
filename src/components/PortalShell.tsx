@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   AnimatePresence,
@@ -19,9 +19,9 @@ const menus: { label: string; path: string; icon: string; roles?: Role[] }[] = [
   { label: "Kelas Kuliah", path: "/kelas", icon: "journal-bookmark-fill" },
   { label: "Jadwal Akademik", path: "/jadwal", icon: "calendar3" },
   { label: "Tugas & Pengumpulan", path: "/tugas", icon: "clipboard2-check" },
+  { label: "Nilai & IPS", path: "/nilai", icon: "clipboard2-data" },
   { label: "Pengumuman", path: "/pengumuman", icon: "megaphone" },
   { label: "Peserta KRS", path: "/krs", icon: "people", roles: ["admin", "super_admin"] },
-  { label: "Input Nilai", path: "/nilai", icon: "clipboard2-data", roles: ["dosen", "admin", "super_admin"] },
   { label: "Validasi RPS", path: "/rps-review", icon: "patch-check-fill", roles: ["admin", "super_admin"] },
   { label: "Pengguna", path: "/pengguna", icon: "people-fill", roles: ["super_admin"] },
   { label: "Audit Sistem", path: "/audit", icon: "shield-lock-fill", roles: ["super_admin"] },
@@ -59,13 +59,27 @@ export function PortalShell({
   onDemoRole?: (role: Role) => void;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const reduced = useReducedMotion();
   const [clock, setClock] = useState("");
   const [open, setOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [navLoading, setNavLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [unread, setUnread] = useState(initialUnread);
   const [toast, setToast] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setNavLoading(false);
+    setDrawerOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!navLoading) return;
+    const t = setTimeout(() => setNavLoading(false), 6000);
+    return () => clearTimeout(t);
+  }, [navLoading]);
 
   useEffect(() => {
     const tick = () =>
@@ -154,8 +168,18 @@ export function PortalShell({
     if (preview) {
       onDemoNavigate?.(path);
       setOpen(false);
+      return;
     }
+    if (!active(path)) setNavLoading(true);
   };
+
+  const triggerRefresh = () => {
+    if (preview) return;
+    setRefreshing(true);
+    router.refresh();
+    setTimeout(() => setRefreshing(false), 900);
+  };
+
   const nav = (item: (typeof menus)[number]) =>
     preview ? (
       <button
@@ -171,34 +195,10 @@ export function PortalShell({
         key={item.path}
         href={item.path}
         className={`nav-link ${active(item.path) ? "active" : ""}`}
-        onClick={() => setDrawerOpen(false)}
+        onClick={() => activate(item.path)}
       >
         <i className={`bi bi-${item.icon}`} />
         <span>{item.label}</span>
-      </Link>
-    );
-
-  const bottomItems = ["/dashboard", "/kelas", "/tugas", "/pengaturan"].map(
-    (p) => menus.find((m) => m.path === p)!
-  );
-  const bottom = (item: (typeof menus)[number]) =>
-    preview ? (
-      <button
-        key={item.path}
-        onClick={() => activate(item.path)}
-        className={active(item.path) ? "active" : ""}
-      >
-        <i className={`bi bi-${item.icon}`} />
-        {item.label.split(" ")[0]}
-      </button>
-    ) : (
-      <Link
-        key={item.path}
-        href={item.path}
-        className={active(item.path) ? "active" : ""}
-      >
-        <i className={`bi bi-${item.icon}`} />
-        {item.label.split(" ")[0]}
       </Link>
     );
 
@@ -272,6 +272,12 @@ export function PortalShell({
               </div>
             </div>
             <div className="topbar-right" ref={menuRef}>
+              {(navLoading || refreshing) && (
+                <div className="route-spinner-pill" role="status">
+                  <span className="spinner-ring sm" aria-hidden="true" />
+                  <span>Memuat...</span>
+                </div>
+              )}
               {preview && onDemoRole && (
                 <select
                   className="select tiny"
@@ -284,6 +290,17 @@ export function PortalShell({
                   <option value="admin">Admin</option>
                   <option value="super_admin">Super Admin</option>
                 </select>
+              )}
+              {!preview && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Muat ulang data halaman"
+                  title="Muat ulang data"
+                  onClick={triggerRefresh}
+                >
+                  <i className={`bi bi-arrow-clockwise ${refreshing ? "spin-icon" : ""}`} />
+                </button>
               )}
               <div className="top-pill">
                 <i className="bi bi-calendar3" />
@@ -303,7 +320,7 @@ export function PortalShell({
                   {unread > 0 && <em />}
                 </button>
               ) : (
-                <Link href="/notifikasi" className="icon-button" aria-label="Notifikasi">
+                <Link href="/notifikasi" className="icon-button" aria-label="Notifikasi" onClick={() => activate("/notifikasi")}>
                   <i className="bi bi-bell" />
                   {unread > 0 && <em />}
                 </Link>
@@ -391,10 +408,6 @@ export function PortalShell({
             )}
           </AnimatePresence>
         </div>
-
-        <nav className="bottomnav" aria-label="Navigasi seluler">
-          {bottomItems.map(bottom)}
-        </nav>
 
         <AnimatePresence>
           {drawerOpen && (
