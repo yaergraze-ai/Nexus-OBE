@@ -217,6 +217,8 @@ export default async function GradesHome() {
     );
   }
 
+  const isAdminRole =
+    profile.role === "admin" || profile.role === "super_admin";
   const classes =
     profile.role === "dosen"
       ? all.filter((c) => c.lecturer_identity_number === profile.identity_number)
@@ -225,9 +227,13 @@ export default async function GradesHome() {
   return (
     <>
       <SectionHead
-        eyebrow="EVALUASI AKADEMIK"
-        title="Input Nilai Mahasiswa"
-        subtitle="Pilih kelas untuk mengisi enam komponen nilai akhir PAP atau pantau E-Raport."
+        eyebrow={isAdminRole ? "MONITORING AKADEMIK" : "EVALUASI AKADEMIK"}
+        title={isAdminRole ? "Rekap & Audit Nilai Kelas" : "Input Nilai Mahasiswa"}
+        subtitle={
+          isAdminRole
+            ? "Pengisian nilai utama dilakukan oleh Dosen Pengampu. Klik mata kuliah untuk melihat pertemuan secara ringkas, buka E-Raport, atau lakukan koreksi PAP bila dibutuhkan."
+            : "Pilih kelas untuk mengisi enam komponen nilai akhir PAP atau pantau E-Raport."
+        }
       />
       <div className="panel tight">
         <div className="table-scroll">
@@ -245,7 +251,9 @@ export default async function GradesHome() {
               {classes.map((c) => (
                 <tr key={c.id}>
                   <td>
-                    <strong>{c.courses.name_id}</strong>
+                    <Link href={`/kelas/${c.id}`} className="crumb-link">
+                      <strong>{c.courses.name_id}</strong>
+                    </Link>
                   </td>
                   <td>
                     {c.class_code} · {c.courses.sks_total} SKS
@@ -256,18 +264,37 @@ export default async function GradesHome() {
                   </td>
                   <td>
                     <div className="chip-row">
-                      <Link
-                        href={`/kelas/${c.id}/nilai`}
-                        className="btn btn-primary btn-sm"
-                      >
-                        Kelola Nilai <i className="bi bi-arrow-up-right" />
-                      </Link>
-                      <Link
-                        href={`/kelas/${c.id}/raport`}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        E-Raport
-                      </Link>
+                      {isAdminRole ? (
+                        <>
+                          <Link
+                            href={`/kelas/${c.id}/raport`}
+                            className="btn btn-primary btn-sm"
+                          >
+                            E-Raport <i className="bi bi-arrow-up-right" />
+                          </Link>
+                          <Link
+                            href={`/kelas/${c.id}/nilai`}
+                            className="btn btn-secondary btn-sm"
+                          >
+                            Koreksi PAP
+                          </Link>
+                        </>
+                      ) : (
+                        <>
+                          <Link
+                            href={`/kelas/${c.id}/nilai`}
+                            className="btn btn-primary btn-sm"
+                          >
+                            Kelola Nilai <i className="bi bi-arrow-up-right" />
+                          </Link>
+                          <Link
+                            href={`/kelas/${c.id}/raport`}
+                            className="btn btn-secondary btn-sm"
+                          >
+                            E-Raport
+                          </Link>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

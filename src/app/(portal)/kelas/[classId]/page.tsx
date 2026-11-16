@@ -16,6 +16,10 @@ import { StartMeeting, CheckIn, EditMeetingSummary } from "@/components/MeetingM
 import { AttendanceRoster } from "@/components/AttendanceRoster";
 import { MeetingReferences } from "@/components/MeetingReferences";
 import { MeetingTasks } from "@/components/MeetingTasks";
+import {
+  MeetingAccordion,
+  type MeetingAccordionItem,
+} from "@/components/MeetingAccordion";
 import { ActionButton } from "@/components/ActionButton";
 import { calculateFinal } from "@/lib/utils/grade-calculator";
 import type { Profile } from "@/types/domain";
@@ -138,9 +142,10 @@ export default async function ClassDetail({
         : null
     )
   );
-  const active = meetings.some(
-    (m) => m.status === "LIVE" && new Date(m.ends_at) > new Date()
-  );
+  const activeMeeting =
+    meetings.find((m) => m.status === "LIVE" && new Date(m.ends_at) > new Date()) ??
+    null;
+  const active = Boolean(activeMeeting);
   const meetingDoneCount = Math.max(klass.initial_meeting_count, meetings.length);
 
   const hadirCount = meetings.filter(
@@ -228,7 +233,11 @@ export default async function ClassDetail({
         <Link href={`/kelas/${classId}/rps`}>RPS &amp; OBE</Link>
         <Link href={`/kelas/${classId}/raport`}>E-Raport</Link>
         <Link href={`/tugas?classId=${classId}`}>Tugas &amp; Pengumpulan</Link>
-        {manageRoster && <Link href={`/kelas/${classId}/nilai`}>Input Nilai</Link>}
+        {manageRoster && (
+          <Link href={`/kelas/${classId}/nilai`}>
+            {teacher ? "Input Nilai" : "Rekap Nilai"}
+          </Link>
+        )}
       </div>
 
       {profile.role === "mahasiswa" && !canStudentAddTask && (
@@ -253,111 +262,104 @@ export default async function ClassDetail({
               <Tag kind="neutral">{meetings.length} rekaman digital</Tag>
             </div>
             {meetings.length ? (
-              meetings.map((m, i) => {
-                const live =
-                  m.status === "LIVE" && new Date(m.ends_at) > new Date();
-                const meetingTasks = classTasks.filter((t) => t.meeting_id === m.id);
-                const rosterStatuses = rosterAttendanceMap.get(m.id) ?? {};
-                return (
-                  <div
-                    className="meeting-card"
-                    id={`pertemuan-${m.meeting_number}`}
-                    key={m.id}
-                  >
-                    <div className="meeting-n">
-                      {String(m.meeting_number).padStart(2, "0")}
-                    </div>
-                    <div className="meeting-body">
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <h3>
-                          {m.type} · Pertemuan ke-{m.meeting_number}
-                        </h3>
-                        <Tag kind={live ? "live" : "neutral"}>
-                          {live ? "LIVE" : "Terkunci"}
-                        </Tag>
-                      </div>
-                      <p>
-                        <i className="bi bi-calendar3" />{" "}
-                        {new Date(m.meeting_date + "T00:00:00").toLocaleDateString("id-ID", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                        })}
-                      </p>
-                      <p className="preline" style={{ color: "#37475e" }}>
-                        {m.summary}
-                      </p>
-                      {photos[i]?.data?.signedUrl && (
-                        <Image
-                          className="meeting-photo"
-                          unoptimized
-                          width={270}
-                          height={170}
-                          src={photos[i]!.data!.signedUrl}
-                          alt={`Dokumentasi pertemuan ${m.meeting_number}`}
-                        />
-                      )}
-                      <div className="form-actions">
-                        {profile.role === "mahasiswa" && canStudentAddTask && (
-                          <CheckIn meeting={m} already={attended.has(m.id)} />
-                        )}
-                        {teacher && <EditMeetingSummary meeting={m} />}
-                        {teacher && live && (
-                          <ActionButton
-                            url="/api/meetings/finish"
-                            payload={{ meetingId: m.id }}
-                            label="Selesai Pertemuan"
-                            icon="lock"
-                            kind="secondary"
-                            confirm="Tutup presensi dan kunci BAP sekarang?"
+              <MeetingAccordion
+                defaultOpenId={activeMeeting?.id ?? null}
+                items={meetings.map((m, i): MeetingAccordionItem => {
+                  const live =
+                    m.status === "LIVE" && new Date(m.ends_at) > new Date();
+                  const meetingTasks = classTasks.filter((t) => t.meeting_id === m.id);
+                  const meetingRefs = refsByMeeting[m.id] ?? [];
+                  const rosterStatuses = rosterAttendanceMap.get(m.id) ?? {};
+                  const dateLabel = new Date(
+                    m.meeting_date + "T00:00:00"
+                  ).toLocaleDateString("id-ID", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  });
+                  const firstLine = m.summary.trim().split(/\r?\n/)[0] ?? "";
+                  const summaryPreview =
+                    firstLine.length > 72 ? `${firstLine.slice(0, 69)}...` : firstLine;
+
+                  return {
+                    id: m.id,
+                    meetingNumber: m.meeting_number,
+                    type: m.type,
+                    dateLabel,
+                    summaryPreview,
+                    live,
+                    taskCount: meetingTasks.length,
+                    refCount: meetingRefs.length,
+                    body: (
+                      <div className="meeting-body">
+                        <p className="preline" style={{ color: "#37475e", marginTop: 0 }}>
+                          {m.summary}
+                        </p>
+                        {photos[i]?.data?.signedUrl && (
+                          <Image
+                            className="meeting-photo"
+                            unoptimized
+                            width={270}
+                            height={170}
+                            src={photos[i]!.data!.signedUrl}
+                            alt={`Dokumentasi pertemuan ${m.meeting_number}`}
                           />
                         )}
-                        {canAdmin && !live && (
-                          <ActionButton
-                            url="/api/meetings/override"
-                            payload={{ meetingId: m.id }}
-                            label="Buka koreksi 30 menit"
-                            icon="unlock"
-                            kind="secondary"
-                            confirm="Catat pembukaan BAP dalam log audit?"
+                        <div className="form-actions">
+                          {profile.role === "mahasiswa" && canStudentAddTask && (
+                            <CheckIn meeting={m} already={attended.has(m.id)} />
+                          )}
+                          {teacher && <EditMeetingSummary meeting={m} />}
+                          {teacher && live && (
+                            <ActionButton
+                              url="/api/meetings/finish"
+                              payload={{ meetingId: m.id }}
+                              label="Selesai Pertemuan"
+                              icon="lock"
+                              kind="secondary"
+                              confirm="Tutup presensi dan kunci BAP sekarang?"
+                            />
+                          )}
+                          {canAdmin && !live && (
+                            <ActionButton
+                              url="/api/meetings/override"
+                              payload={{ meetingId: m.id }}
+                              label="Buka koreksi 30 menit"
+                              icon="unlock"
+                              kind="secondary"
+                              confirm="Catat pembukaan BAP dalam log audit?"
+                            />
+                          )}
+                        </div>
+                        {manageRoster && (
+                          <AttendanceRoster
+                            meetingId={m.id}
+                            students={rosterStudents}
+                            initialStatuses={rosterStatuses}
                           />
                         )}
-                      </div>
-                      {manageRoster && (
-                        <AttendanceRoster
+                        <MeetingTasks
+                          classId={classId}
                           meetingId={m.id}
-                          students={rosterStudents}
-                          initialStatuses={rosterStatuses}
+                          meetingNumber={m.meeting_number}
+                          tasks={meetingTasks}
+                          submissions={submissions}
+                          submissionStats={submissionStats}
+                          currentUserId={profile.id}
+                          role={profile.role}
+                          canAdd={canAddTask}
+                          canManageAll={manageRoster}
                         />
-                      )}
-                      <MeetingTasks
-                        classId={classId}
-                        meetingId={m.id}
-                        meetingNumber={m.meeting_number}
-                        tasks={meetingTasks}
-                        submissions={submissions}
-                        submissionStats={submissionStats}
-                        currentUserId={profile.id}
-                        role={profile.role}
-                        canAdd={canAddTask}
-                        canManageAll={manageRoster}
-                      />
-                      <MeetingReferences
-                        meetingId={m.id}
-                        references={refsByMeeting[m.id] ?? []}
-                        canManage={manageRoster}
-                      />
-                    </div>
-                  </div>
-                );
-              })
+                        <MeetingReferences
+                          meetingId={m.id}
+                          references={meetingRefs}
+                          canManage={manageRoster}
+                        />
+                      </div>
+                    ),
+                  };
+                })}
+              />
             ) : (
               <Empty
                 icon="journal-text"
@@ -538,7 +540,8 @@ export default async function ClassDetail({
                 )}
                 <div className="form-actions">
                   <Link href={`/kelas/${classId}/nilai`} className="btn btn-primary btn-sm">
-                    <i className="bi bi-clipboard2-data" /> Input / Perbarui Nilai Mahasiswa
+                    <i className="bi bi-clipboard2-data" />{" "}
+                    {teacher ? "Input / Perbarui Nilai Mahasiswa" : "Rekap & Koreksi Nilai"}
                   </Link>
                   <Link href={`/kelas/${classId}/rps`} className="btn btn-secondary btn-sm">
                     <i className="bi bi-diagram-3" /> Kelola RPS &amp; OBE

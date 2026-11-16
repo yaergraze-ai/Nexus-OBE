@@ -180,29 +180,40 @@ export function PortalShell({
     setTimeout(() => setRefreshing(false), 900);
   };
 
-  const nav = (item: (typeof menus)[number]) =>
-    preview ? (
+  const menuLabel = (item: (typeof menus)[number]) => {
+    if (item.path !== "/nilai") return item.label;
+    if (profile.role === "dosen") return "Input Nilai";
+    if (profile.role === "admin" || profile.role === "super_admin") {
+      return "Rekap Nilai";
+    }
+    return item.label;
+  };
+
+  const nav = (item: (typeof menus)[number]) => {
+    const label = menuLabel(item);
+    return preview ? (
       <button
         key={item.path}
-        title={item.label}
+        title={label}
         className={`nav-link ${active(item.path) ? "active" : ""}`}
         onClick={() => activate(item.path)}
       >
         <i className={`bi bi-${item.icon}`} />
-        <span>{item.label}</span>
+        <span>{label}</span>
       </button>
     ) : (
       <Link
         key={item.path}
-        title={item.label}
+        title={label}
         href={item.path}
         className={`nav-link ${active(item.path) ? "active" : ""}`}
         onClick={() => activate(item.path)}
       >
         <i className={`bi bi-${item.icon}`} />
-        <span>{item.label}</span>
+        <span>{label}</span>
       </Link>
     );
+  };
 
   const logout = async () => {
     if (preview) {
@@ -272,7 +283,12 @@ export function PortalShell({
               <div className="breadcrumbs">
                 Portal Akademik{" "}
                 <i className="bi bi-chevron-right" style={{ margin: "0 8px", fontSize: 9 }} />
-                <strong>{menus.find((x) => active(x.path))?.label || "Dashboard"}</strong>
+                <strong>
+                  {(() => {
+                    const matched = menus.find((x) => active(x.path));
+                    return matched ? menuLabel(matched) : "Dashboard";
+                  })()}
+                </strong>
               </div>
             </div>
             <div className="topbar-right" ref={menuRef}>
