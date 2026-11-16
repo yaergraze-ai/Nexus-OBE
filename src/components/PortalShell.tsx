@@ -184,6 +184,7 @@ export function PortalShell({
     preview ? (
       <button
         key={item.path}
+        title={item.label}
         className={`nav-link ${active(item.path) ? "active" : ""}`}
         onClick={() => activate(item.path)}
       >
@@ -193,6 +194,7 @@ export function PortalShell({
     ) : (
       <Link
         key={item.path}
+        title={item.label}
         href={item.path}
         className={`nav-link ${active(item.path) ? "active" : ""}`}
         onClick={() => activate(item.path)}
@@ -262,8 +264,10 @@ export function PortalShell({
                 onClick={() => setDrawerOpen(true)}
               >
                 <i className="bi bi-list" style={{ fontSize: 22 }} aria-hidden="true" />
-                <span className="brand-mark">N</span>
-                <span>NEXUS OBE</span>
+                <span className="mobile-brand-only">
+                  <span className="brand-mark">N</span>
+                  <span>NEXUS OBE</span>
+                </span>
               </button>
               <div className="breadcrumbs">
                 Portal Akademik{" "}

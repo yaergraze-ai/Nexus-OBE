@@ -565,6 +565,7 @@ export default async function ClassDetail({
                       href={`/tugas/${t.id}`}
                       className="crumb-link"
                       style={{
+                        flex: 1,
                         minWidth: 0,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -574,7 +575,11 @@ export default async function ClassDetail({
                       {t.meetings ? `P#${t.meetings.meeting_number} · ` : ""}
                       {t.title}
                     </Link>
-                    <Link href={`/tugas/${t.id}`} className="btn btn-secondary btn-sm">
+                    <Link
+                      href={`/tugas/${t.id}`}
+                      className="btn btn-secondary btn-sm"
+                      style={{ flexShrink: 0 }}
+                    >
                       Buka
                     </Link>
                   </div>
