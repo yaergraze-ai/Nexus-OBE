@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     return fail("unregistered");
   }
 
-  if (!sameRegisteredEmail(verifiedEmail, profile.email)) {
+  if (!sameRegisteredEmail(verifiedEmail, profile.email, user)) {
     await db.auth.signOut();
     return fail("unregistered");
   }

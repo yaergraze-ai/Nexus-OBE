@@ -31,6 +31,7 @@ const googleSchema = z.object({
 async function establishVerifiedGoogleSession(
   db: Awaited<ReturnType<typeof createClient>>,
   admin: ReturnType<typeof adminClient>,
+  expectedUserId: string,
   email: string,
   credential: string,
   nonce?: string
@@ -40,9 +41,12 @@ async function establishVerifiedGoogleSession(
     token: credential,
     nonce,
   });
-  if (!native.error) return true;
+  if (!native.error && native.data.user?.id === expectedUserId) return true;
+  if (!native.error && native.data.user?.id !== expectedUserId) {
+    await db.auth.signOut();
+  }
 
-  // Fallback for accounts created with email+password before email_verified identity sync ran:
+  // Fallback when Google identity is not yet linked to expectedUserId:
   // Google tokeninfo already cryptographically verified email & nonce above.
   const link = await admin.auth.admin.generateLink({
     type: "magiclink",
@@ -55,7 +59,7 @@ async function establishVerifiedGoogleSession(
     token_hash: tokenHash,
     type: "magiclink",
   });
-  return !verified.error;
+  return !verified.error && verified.data.user?.id === expectedUserId;
 }
 
 export async function POST(req: Request) {
@@ -67,14 +71,40 @@ export async function POST(req: Request) {
 
     const googleUser = await verifyGoogleTokenInfo(body.credential, body.nonce);
 
-    const { data: existingProfile, error: profQueryErr } = await admin
+    const { data: initialProfile, error: profQueryErr } = await admin
       .from("profiles")
       .select("id,email,role,is_active")
       .eq("email", googleUser.email)
       .maybeSingle();
     if (profQueryErr) throw new Error("Pemeriksaan profil gagal.");
+    let existingProfile = initialProfile;
+
+    if (!existingProfile) {
+      const { data: usersList } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+      for (const u of usersList?.users ?? []) {
+        const full = await admin.auth.admin.getUserById(u.id);
+        const hasLinkedGoogle = (full.data.user?.identities ?? []).some(
+          (i) =>
+            i.provider === "google" &&
+            typeof i.identity_data?.email === "string" &&
+            i.identity_data.email.trim().toLowerCase() === googleUser.email
+        );
+        if (hasLinkedGoogle) {
+          const { data: linkedProf } = await admin
+            .from("profiles")
+            .select("id,email,role,is_active")
+            .eq("id", u.id)
+            .maybeSingle();
+          if (linkedProf) {
+            existingProfile = linkedProf;
+            break;
+          }
+        }
+      }
+    }
 
     const db = await createClient();
+    await db.auth.signOut();
 
     if (!existingProfile) {
       if (!body.nim) {
@@ -86,7 +116,7 @@ export async function POST(req: Request) {
         });
       }
 
-      await provisionStudentAccount({
+      const createdUserId = await provisionStudentAccount({
         admin,
         email: googleUser.email,
         nim: body.nim,
@@ -97,6 +127,7 @@ export async function POST(req: Request) {
       const signedIn = await establishVerifiedGoogleSession(
         db,
         admin,
+        createdUserId,
         googleUser.email,
         body.credential,
         body.nonce
@@ -137,6 +168,7 @@ export async function POST(req: Request) {
     const signedIn = await establishVerifiedGoogleSession(
       db,
       admin,
+      existingProfile.id,
       canonicalEmail,
       body.credential,
       body.nonce
@@ -148,7 +180,7 @@ export async function POST(req: Request) {
     const {
       data: { user },
     } = await db.auth.getUser();
-    if (!user || !sameRegisteredEmail(verifiedUserEmail(user), existingProfile.email)) {
+    if (!user || !sameRegisteredEmail(verifiedUserEmail(user), existingProfile.email, user)) {
       await db.auth.signOut();
       return apiError(
         new Error("Email Google tidak cocok dengan identitas terdaftar pada portal kampus."),

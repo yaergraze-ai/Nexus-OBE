@@ -79,7 +79,18 @@ export async function resolveActiveProfileByIdentifier(
       .eq("email", identifier)
       .maybeSingle();
     if (error) throw error;
-    return data?.is_active ? (data as ActiveProfileRecord) : null;
+    if (data?.is_active) return data as ActiveProfileRecord;
+
+    const localMatch = identifier.match(/^[a-z]+\.([a-z0-9._-]+)@kampus\.local$/i);
+    if (localMatch?.[1]) {
+      const { data: byId } = await admin
+        .from("profiles")
+        .select("id,email,full_name,identity_number,role,is_active")
+        .ilike("identity_number", localMatch[1])
+        .maybeSingle();
+      if (byId?.is_active) return byId as ActiveProfileRecord;
+    }
+    return null;
   }
 
   if (!/^(?=.*\d)[a-z0-9._-]{4,30}$/.test(identifier)) return null;

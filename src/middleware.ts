@@ -102,10 +102,17 @@ export async function middleware(request: NextRequest) {
   const validCampusUser = Boolean(
     profile?.is_active &&
       user.email_confirmed_at &&
-      profile.email.trim().toLowerCase() === user.email?.trim().toLowerCase()
+      (profile.email.trim().toLowerCase() === user.email?.trim().toLowerCase() ||
+        (user.identities ?? []).some(
+          (i) =>
+            typeof i.identity_data?.email === "string" &&
+            i.identity_data.email.trim().toLowerCase() ===
+              profile.email.trim().toLowerCase()
+        ))
   );
 
   if (!validCampusUser) {
+    await db.auth.signOut();
     if (isProtected(path)) return redirectTo("/login?error=inactive");
     return response;
   }

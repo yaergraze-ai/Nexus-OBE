@@ -43,7 +43,13 @@ revoke all on function public.check_mfa() from public,anon;
 grant execute on function public.check_mfa() to authenticated;
 
 -- 2. Repair auth.identities email_verified flag for confirmed accounts created via admin API
---    so Supabase automatic Google Sign-In linking works smoothly.
+--    and clean up any accidental cross-account Google identity link where the Google email belongs to another profile.
+delete from auth.identities i
+using public.profiles p
+where i.provider = 'google'
+  and lower(coalesce(i.identity_data->>'email', '')) = lower(p.email)
+  and i.user_id <> p.id;
+
 update auth.identities i
 set identity_data = coalesce(i.identity_data, '{}'::jsonb) || jsonb_build_object('email_verified', true)
 from auth.users u
