@@ -80,24 +80,55 @@ async function promptText(rl, label, fallback = "") {
   return answer || fallback;
 }
 
+async function promptEmail(rl, label, fallback, usedEmails) {
+  while (true) {
+    const val = (await promptText(rl, `${label} (tekan Enter untuk default)`, fallback)).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+      stdout.write(`  ! "${val}" bukan email. Masukkan email valid (harus ada '@', contoh: nama@gmail.com) atau tekan Enter.\n`);
+      continue;
+    }
+    if (usedEmails.has(val)) {
+      stdout.write(`  ! Email ${val} sudah dipakai akun lain. Gunakan email berbeda atau tekan Enter untuk default.\n`);
+      continue;
+    }
+    usedEmails.add(val);
+    return val;
+  }
+}
+
+async function promptPassword(rl, label) {
+  while (true) {
+    const val = await promptText(rl, label);
+    if (val.length < 8) {
+      stdout.write("  ! Kata sandi minimal 8 karakter.\n");
+      continue;
+    }
+    return val;
+  }
+}
+
 if (initRoles) {
   const rl = stdin.isTTY ? createInterface({ input: stdin, output: stdout }) : null;
   try {
+    const usedEmails = new Set();
     const kanaEmail =
-      process.env.KANA_EMAIL ||
-      (rl ? await promptText(rl, "Email Kana Nurhana (240511088)", "kana.240511088@kampus.local") : "kana.240511088@kampus.local");
+      process.env.KANA_EMAIL?.trim().toLowerCase() ||
+      (rl ? await promptEmail(rl, "Email Kana Nurhana (NIM 240511088, sandi=240511088)", "kana.240511088@kampus.local", usedEmails) : "kana.240511088@kampus.local");
+    usedEmails.add(kanaEmail);
     const adminEmail =
-      process.env.ADMIN_EMAIL ||
-      (rl ? await promptText(rl, "Email Admin Akademik (ADMIN-001)", "admin@kampus.local") : "admin@kampus.local");
+      process.env.ADMIN_EMAIL?.trim().toLowerCase() ||
+      (rl ? await promptEmail(rl, "Email Admin Akademik (ADMIN-001)", "admin@kampus.local", usedEmails) : "admin@kampus.local");
+    usedEmails.add(adminEmail);
     const adminPassword =
       process.env.ADMIN_INITIAL_PASSWORD ||
-      (rl ? await promptText(rl, "Password awal Admin (min. 8 karakter)") : "");
+      (rl ? await promptPassword(rl, "Password awal Admin (min. 8 karakter)") : "");
     const superEmail =
-      process.env.SUPER_ADMIN_EMAIL ||
-      (rl ? await promptText(rl, "Email Super Admin (SYS-001)", "superadmin@kampus.local") : "superadmin@kampus.local");
+      process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase() ||
+      (rl ? await promptEmail(rl, "Email Super Admin (SYS-001)", "superadmin@kampus.local", usedEmails) : "superadmin@kampus.local");
+    usedEmails.add(superEmail);
     const superPassword =
       process.env.SUPER_ADMIN_INITIAL_PASSWORD ||
-      (rl ? await promptText(rl, "Password awal Super Admin (min. 8 karakter)") : "");
+      (rl ? await promptPassword(rl, "Password awal Super Admin (min. 8 karakter)") : "");
 
     if (adminPassword.length < 8 || superPassword.length < 8) {
       throw new Error(

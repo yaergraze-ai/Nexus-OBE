@@ -35,9 +35,33 @@ export async function POST(req: Request) {
 
     if (error) {
       const msg = error.message.toLowerCase();
+      if (msg.includes("not enabled") || msg.includes("unsupported provider")) {
+        return apiError(
+          new Error(
+            "Login Google belum diaktifkan di Supabase (buka Authentication → Providers → Google, nyalakan Google & isi Client ID)."
+          ),
+          503
+        );
+      }
+      if (msg.includes("audience") || msg.includes("client_id")) {
+        return apiError(
+          new Error(
+            "Client ID Google di Supabase belum cocok dengan Google Cloud Console."
+          ),
+          400
+        );
+      }
+      if (msg.includes("nonce")) {
+        return apiError(
+          new Error("Sesi tombol Google kedaluwarsa. Muat ulang halaman lalu coba lagi."),
+          400
+        );
+      }
       if (msg.includes("diundang") || msg.includes("allowlist") || error.status === 403) {
         return apiError(
-          new Error("Akun Google Anda belum terdaftar pada portal kampus. Hubungi admin kampus."),
+          new Error(
+            "Akun Google Anda belum terdaftar di portal. Daftar dahulu di tab Daftar (Mahasiswa) atau hubungi admin kampus."
+          ),
           403
         );
       }
@@ -55,9 +79,12 @@ export async function POST(req: Request) {
 
     if (!user || !profile || !sameRegisteredEmail(verifiedUserEmail(user), profile.email)) {
       await db.auth.signOut();
+      if (user && !profile) {
+        await admin.auth.admin.deleteUser(user.id).catch(() => undefined);
+      }
       return apiError(
         new Error(
-          "Akun Google Anda belum terdaftar pada portal kampus atau email tidak cocok."
+          "Akun Google Anda belum terdaftar pada portal kampus atau email tidak cocok. Gunakan tab Daftar atau minta admin mengundang email Anda."
         ),
         403
       );

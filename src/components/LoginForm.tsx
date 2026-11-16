@@ -123,6 +123,8 @@ export function LoginForm({
   const alertRef = useRef<HTMLDivElement>(null);
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const nonceRef = useRef<string>("");
+  const gisInitializedRef = useRef(false);
+  const googleHandlerRef = useRef<(res: GoogleCredentialResponse) => void>(() => {});
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -161,6 +163,10 @@ export function LoginForm({
   const showMainTabs = showGoogleSection;
 
   useEffect(() => {
+    googleHandlerRef.current = (r) => void handleGoogleCredential(r);
+  }, [handleGoogleCredential]);
+
+  useEffect(() => {
     if (!GOOGLE_CLIENT_ID || !showGoogleSection) return;
     let cancelled = false;
 
@@ -168,14 +174,21 @@ export function LoginForm({
       const g = window.google?.accounts?.id;
       const host = googleBtnRef.current;
       if (!g || !host || cancelled) return;
-      const { raw, hashed } = await createNoncePair();
+      if (!gisInitializedRef.current) {
+        gisInitializedRef.current = true;
+        const { raw, hashed } = await createNoncePair();
+        if (cancelled) {
+          gisInitializedRef.current = false;
+          return;
+        }
+        nonceRef.current = raw;
+        g.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          nonce: hashed,
+          callback: (r) => googleHandlerRef.current(r),
+        });
+      }
       if (cancelled) return;
-      nonceRef.current = raw;
-      g.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        nonce: hashed,
-        callback: (r) => void handleGoogleCredential(r),
-      });
       host.innerHTML = "";
       const targetWidth = Math.max(240, Math.min(380, Math.floor(host.clientWidth || 340)));
       g.renderButton(host, {
