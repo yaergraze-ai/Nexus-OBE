@@ -268,7 +268,11 @@ export function LoginForm({
       }
       if (cancelled) return;
       host.innerHTML = "";
-      const targetWidth = Math.max(240, Math.min(380, Math.floor(host.clientWidth || 340)));
+      const availableWidth =
+        window.innerWidth < 768
+          ? Math.min(host.clientWidth || window.innerWidth - 76, window.innerWidth - 76)
+          : host.clientWidth || 340;
+      const targetWidth = Math.max(220, Math.min(360, Math.floor(availableWidth)));
       g.renderButton(host, {
         theme: "outline",
         size: "large",
