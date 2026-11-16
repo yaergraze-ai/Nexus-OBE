@@ -4,6 +4,12 @@ import {adminClient} from "@/lib/supabase/admin";
 import {isCustomMailerConfigured,sendPortalEmail} from "@/lib/security/mailer";
 import type {AcademicClass} from "@/types/domain";
 function vapidReady(){return Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY&&process.env.VAPID_SUBJECT);}
+export async function lecturerRecipientIds(classId:string):Promise<string[]>{
+ const admin=adminClient();const {data:klass}=await admin.from("classes").select("lecturer_identity_number").eq("id",classId).single();
+ if(!klass)return [];
+ const {data:lecturers}=await admin.from("profiles").select("id").eq("identity_number",klass.lecturer_identity_number).eq("is_active",true);
+ return (lecturers??[]).map(x=>x.id);
+}
 export async function classRecipientIds(classId:string):Promise<string[]>{
  const admin=adminClient();const {data:klass}=await admin.from("classes").select("lecturer_identity_number").eq("id",classId).single();
  if(!klass)return [];

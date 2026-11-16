@@ -3,7 +3,7 @@ import {apiError} from "@/lib/api";
 import {apiSession,boundedJson} from "@/lib/security/api-session";
 import {assignmentInput,deleteAssignmentInput} from "@/lib/assignments/validation";
 import {ATTACHMENT_BUCKET} from "@/lib/assignments/attachments";
-import {deliver,classRecipientIds} from "@/lib/security/notifications";
+import {deliver,classRecipientIds,lecturerRecipientIds} from "@/lib/security/notifications";
 import {adminClient} from "@/lib/supabase/admin";
 export async function POST(req:Request){
  try {
@@ -18,7 +18,8 @@ export async function POST(req:Request){
   if(rpc.error)throw new Error(rpc.error.message);
   const id=rpc.data;
   if(!entry.id||prior?.due_at!==entry.dueAt){try{
-   const users=(await classRecipientIds(entry.classId)).filter(uid=>uid!==profile.id);
+   const recipients=profile.role==="mahasiswa"?await lecturerRecipientIds(entry.classId):await classRecipientIds(entry.classId);
+   const users=recipients.filter(uid=>uid!==profile.id);
    await deliver(users,{title:entry.id?"Tenggat tugas diperbarui":"Tugas baru",body:`${entry.title} • tenggat ${new Date(entry.dueAt).toLocaleString("id-ID",{timeZone:"Asia/Jakarta"})} WIB`,category:"ASSIGNMENT",url:`/tugas/${id}`},false,false);
   }catch(e){console.error("optional assignment push delivery:",e);}}
   return NextResponse.json({ok:true,id});

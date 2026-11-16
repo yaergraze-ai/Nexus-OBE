@@ -52,7 +52,7 @@ export default async function ClassDetail({
     await Promise.all([
       readMeetings(db, classId),
       readMeetingReferences(db, classId),
-      readAssignmentsBoard(db, classId),
+      readAssignmentsBoard(db, classId, { id: profile.id, role: profile.role }),
       profile.role === "mahasiswa"
         ? db
             .from("class_enrollments")

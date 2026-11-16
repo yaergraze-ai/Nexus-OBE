@@ -1,8 +1,9 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import type {AcademicClass,Meeting,MeetingReference,MeetingReferenceFile,Notification,RpsCpl,RpsCpmk,RpsSub,Grade,Profile} from "@/types/domain";
+import type {AcademicClass,Meeting,MeetingReference,MeetingReferenceFile,Notification,RpsCpl,RpsCpmk,RpsSub,Grade,Profile,Role} from "@/types/domain";
 import type {Assignment} from "@/types/coursework";
 import {MEETING_REF_BUCKET} from "@/lib/assignments/attachments";
+import {adminClient} from "@/lib/supabase/admin";
 export async function readClasses(db:SupabaseClient){
  const {data,error}=await db.from("classes").select("*, courses(*), lecturer_directory(*)").order("schedule_day");
  if(error)throw new Error(error.message);return (data??[]) as AcademicClass[];
@@ -20,32 +21,44 @@ export async function readMeetingsByClasses(db:SupabaseClient,classIds:string[])
  const {data,error}=await db.from("meetings").select("*").in("class_id",classIds).order("meeting_number",{ascending:true});
  if(error)throw new Error(error.message);return (data??[]) as Meeting[];
 }
-export async function readAssignmentsBoard(db:SupabaseClient,classId?:string){
- const withMeeting="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id)),meetings(id,meeting_number,meeting_date,type),profiles:author_id(full_name,identity_number,role)";
- const base="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id)),profiles:author_id(full_name,identity_number,role)";
+async function filterStudentVisibleAssignments(rows:Assignment[],viewer?:{id:string;role:Role}){
+ if(!viewer||viewer.role!=="mahasiswa"||!rows.length)return rows;
+ const foreignAuthorIds=[...new Set(rows.map(r=>r.author_id).filter(id=>id!==viewer.id))];
+ if(!foreignAuthorIds.length)return rows;
+ const {data:authors}=await adminClient().from("profiles").select("id,role").in("id",foreignAuthorIds);
+ const studentAuthors=new Set((authors??[]).filter(a=>a.role==="mahasiswa").map(a=>a.id));
+ return rows.filter(r=>r.author_id===viewer.id||!studentAuthors.has(r.author_id));
+}
+export async function readAssignmentsBoard(db:SupabaseClient,classId?:string,viewer?:{id:string;role:Role}){
+ const withMeeting="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id)),meetings(id,meeting_number,meeting_date,type)";
+ const base="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id))";
  const q1=db.from("assignments").select(withMeeting).order("created_at",{ascending:false}).limit(200);
  const res1=await (classId?q1.eq("class_id",classId):q1);
- if(!res1.error)return (res1.data??[]) as unknown as Assignment[];
- if(res1.error.code==="PGRST200"||res1.error.code==="42703"||/meetings|meeting_id|profiles/i.test(res1.error.message)){
-  const simpleBase="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id))";
-  const q2=db.from("assignments").select(res1.error.message.includes("profiles")?simpleBase:base).order("due_at",{ascending:true}).limit(200);
+ if(!res1.error)return filterStudentVisibleAssignments((res1.data??[]) as unknown as Assignment[],viewer);
+ if(res1.error.code==="PGRST200"||res1.error.code==="42703"||/meetings|meeting_id/i.test(res1.error.message)){
+  const q2=db.from("assignments").select(base).order("due_at",{ascending:true}).limit(200);
   const res2=await (classId?q2.eq("class_id",classId):q2);
   if(res2.error)throw new Error(res2.error.message);
-  return (res2.data??[]) as unknown as Assignment[];
+  return filterStudentVisibleAssignments((res2.data??[]) as unknown as Assignment[],viewer);
  }
  throw new Error(res1.error.message);
 }
-export async function readAssignmentById(db:SupabaseClient,assignmentId:string){
- const withMeeting="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id)),meetings(id,meeting_number,meeting_date,type),profiles:author_id(full_name,identity_number,role)";
+export async function readAssignmentById(db:SupabaseClient,assignmentId:string,viewer?:{id:string;role:Role}){
+ const withMeeting="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id)),meetings(id,meeting_number,meeting_date,type)";
  const base="*,classes!inner(id,class_code,lecturer_identity_number,courses(name_id))";
  const res1=await db.from("assignments").select(withMeeting).eq("id",assignmentId).maybeSingle();
- if(!res1.error)return (res1.data??null) as unknown as Assignment|null;
- if(res1.error.code==="PGRST200"||res1.error.code==="42703"||/meetings|meeting_id|profiles/i.test(res1.error.message)){
+ let task:Assignment|null=null;
+ if(!res1.error){task=(res1.data??null) as unknown as Assignment|null;}
+ else if(res1.error.code==="PGRST200"||res1.error.code==="42703"||/meetings|meeting_id/i.test(res1.error.message)){
   const res2=await db.from("assignments").select(base).eq("id",assignmentId).maybeSingle();
   if(res2.error)throw new Error(res2.error.message);
-  return (res2.data??null) as unknown as Assignment|null;
+  task=(res2.data??null) as unknown as Assignment|null;
+ }else{
+  throw new Error(res1.error.message);
  }
- throw new Error(res1.error.message);
+ if(!task)return null;
+ const visible=await filterStudentVisibleAssignments([task],viewer);
+ return visible[0]??null;
 }
 export async function readNotifications(db:SupabaseClient,userId:string){
  const {data,error}=await db.from("notifications").select("*").eq("user_id",userId).order("created_at",{ascending:false}).limit(60);

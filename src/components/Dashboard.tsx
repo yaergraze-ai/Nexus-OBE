@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { AcademicClass, Meeting, Notification, Profile, Role } from "@/types/domain";
+import type { AcademicClass, Meeting, Notification, Profile } from "@/types/domain";
 import { Metric, Tag, Progress } from "@/components/UI";
 import { NextClassCountdown } from "@/components/NextClassCountdown";
 import { LecturerPasswordCard } from "@/components/LecturerPasswordCard";
@@ -16,9 +16,7 @@ export interface DashboardInsight {
 export type DashboardTaskPreview = Pick<
   Assignment,
   "id" | "title" | "due_at" | "class_id"
-> & {
-  profiles?: { full_name: string; role: Role } | null;
-};
+>;
 
 const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 
@@ -297,7 +295,6 @@ export function Dashboard({
                 <div>
                   <strong>{t.title}</strong>
                   <p>
-                    {t.profiles ? `Oleh ${t.profiles.full_name} (${t.profiles.role === "mahasiswa" ? "Mahasiswa" : "Dosen"}) · ` : ""}
                     Tenggat{" "}
                     {new Date(t.due_at).toLocaleString("id-ID", {
                       timeZone: "Asia/Jakarta",

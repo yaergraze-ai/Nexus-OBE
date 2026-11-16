@@ -95,6 +95,7 @@ export function MeetingTasks({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -280,7 +281,7 @@ export function MeetingTasks({
 
       {tasks.length > 0 ? (
         <div className="ref-list">
-          {tasks.map((t) => {
+          {(showAll ? tasks : tasks.slice(0, 3)).map((t) => {
             const own = submissions.find((s) => s.assignment_id === t.id);
             const stat = submissionStats[t.id];
             const expired = new Date(t.due_at) <= new Date();
@@ -298,7 +299,6 @@ export function MeetingTasks({
                     </Link>
                     <div className="tiny subtle" style={{ marginTop: 2 }}>
                       {COMPONENT_LABEL[t.component]} · Tenggat {dateTimeWib(t.due_at)}
-                      {t.profiles ? ` · Oleh ${t.profiles.full_name} (${t.profiles.role === "mahasiswa" ? "Mahasiswa" : "Dosen"})` : ""}
                     </div>
                   </div>
                   <div className="chip-row" style={{ gap: 6 }}>
@@ -368,6 +368,17 @@ export function MeetingTasks({
               </div>
             );
           })}
+          {tasks.length > 3 && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowAll((v) => !v)}
+            >
+              {showAll
+                ? "Tampilkan lebih ringkas"
+                : `Lihat semua (${tasks.length} tugas pertemuan ini)`}
+            </button>
+          )}
         </div>
       ) : (
         <p className="subtle tiny" style={{ margin: 0 }}>

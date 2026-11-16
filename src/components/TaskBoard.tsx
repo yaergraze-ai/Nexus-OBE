@@ -49,8 +49,10 @@ export function TaskBoard({
   const [error, setError] = useState("");
 
   const [filterClassId, setFilterClassId] = useState(initialClassId);
-  const [taskFilter, setTaskFilter] = useState<"all" | "ungraded" | "student_authored">("all");
+  const [filterMeetingNo, setFilterMeetingNo] = useState<string>("");
+  const [taskFilter, setTaskFilter] = useState<"all" | "ungraded" | "has_submission">("all");
   const [search, setSearch] = useState("");
+  const [visibleLimit, setVisibleLimit] = useState(18);
 
   const canCreate = (role === "dosen" || role === "mahasiswa" || role === "admin" || role === "super_admin") && classes.length > 0;
   const canManageClass = role === "admin" || role === "super_admin" || role === "dosen";
@@ -63,19 +65,38 @@ export function TaskBoard({
     [meetings, klass]
   );
 
+  const meetingNumbers = useMemo(
+    () =>
+      [
+        ...new Set(
+          assignments
+            .filter((a) => !filterClassId || a.class_id === filterClassId)
+            .map((a) => a.meetings?.meeting_number)
+            .filter((n): n is number => typeof n === "number")
+        ),
+      ].sort((a, b) => a - b),
+    [assignments, filterClassId]
+  );
+
   const visibleAssignments = useMemo(() => {
     const q = search.trim().toLowerCase();
     return assignments.filter((a) => {
       if (filterClassId && a.class_id !== filterClassId) return false;
+      if (filterMeetingNo && String(a.meetings?.meeting_number ?? "") !== filterMeetingNo) return false;
       if (canManageClass && taskFilter === "ungraded" && (submissionStats[a.id]?.ungraded ?? 0) === 0) return false;
-      if (canManageClass && taskFilter === "student_authored" && a.profiles?.role !== "mahasiswa") return false;
+      if (canManageClass && taskFilter === "has_submission" && (submissionStats[a.id]?.total ?? 0) === 0) return false;
       if (!q) return true;
-      return [a.title, a.description, a.classes?.class_code, a.classes?.courses?.name_id, a.profiles?.full_name]
+      return [a.title, a.description, a.classes?.class_code, a.classes?.courses?.name_id]
         .join(" ")
         .toLowerCase()
         .includes(q);
     });
-  }, [assignments, canManageClass, filterClassId, search, submissionStats, taskFilter]);
+  }, [assignments, canManageClass, filterClassId, filterMeetingNo, search, submissionStats, taskFilter]);
+
+  const displayedAssignments = useMemo(
+    () => visibleAssignments.slice(0, visibleLimit),
+    [visibleAssignments, visibleLimit]
+  );
 
   const add = () => {
     const defaultClass = filterClassId || classes[0]?.id || "";
@@ -149,7 +170,11 @@ export function TaskBoard({
             aria-label="Filter kelas"
             className="select"
             value={filterClassId}
-            onChange={(e) => setFilterClassId(e.target.value)}
+            onChange={(e) => {
+              setFilterClassId(e.target.value);
+              setFilterMeetingNo("");
+              setVisibleLimit(18);
+            }}
           >
             <option value="">Semua Kelas ({classes.length})</option>
             {classes.map((c) => (
@@ -158,6 +183,24 @@ export function TaskBoard({
               </option>
             ))}
           </select>
+          {meetingNumbers.length > 0 && (
+            <select
+              aria-label="Filter pertemuan"
+              className="select"
+              value={filterMeetingNo}
+              onChange={(e) => {
+                setFilterMeetingNo(e.target.value);
+                setVisibleLimit(18);
+              }}
+            >
+              <option value="">Semua Pertemuan</option>
+              {meetingNumbers.map((n) => (
+                <option key={n} value={String(n)}>
+                  Pertemuan #{n}
+                </option>
+              ))}
+            </select>
+          )}
           {canManageClass && (
             <div className="chip-row" role="group" aria-label="Filter status tugas">
               <button
@@ -176,10 +219,10 @@ export function TaskBoard({
               </button>
               <button
                 type="button"
-                className={`btn btn-sm ${taskFilter === "student_authored" ? "btn-primary" : "btn-secondary"}`}
-                onClick={() => setTaskFilter("student_authored")}
+                className={`btn btn-sm ${taskFilter === "has_submission" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setTaskFilter("has_submission")}
               >
-                Dibuat Mahasiswa
+                Ada Pengumpulan
               </button>
             </div>
           )}
@@ -351,7 +394,7 @@ export function TaskBoard({
       )}
 
       <div className="assignment-grid">
-        {visibleAssignments.map((a) => {
+        {displayedAssignments.map((a) => {
           const own = submissions.find((s) => s.assignment_id === a.id);
           const stat = submissionStats[a.id];
           const expired = new Date(a.due_at) <= new Date();
@@ -410,7 +453,6 @@ export function TaskBoard({
                 <Link href={`/kelas/${a.class_id}`} className="crumb-link">
                   {a.classes?.courses?.name_id}
                 </Link>
-                {a.profiles ? ` · Oleh ${a.profiles.full_name} (${a.profiles.role === "mahasiswa" ? "Mahasiswa" : "Dosen"})` : ""}
               </p>
               <p className="task-summary">{a.description}</p>
               <div className="stat-line">
@@ -453,6 +495,18 @@ export function TaskBoard({
           );
         })}
       </div>
+
+      {visibleAssignments.length > displayedAssignments.length && (
+        <div className="form-actions" style={{ justifyContent: "center", marginBottom: 24 }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setVisibleLimit((n) => n + 18)}
+          >
+            Tampilkan lebih banyak ({visibleAssignments.length - displayedAssignments.length} lagi)
+          </button>
+        </div>
+      )}
 
       {!visibleAssignments.length && (
         <Empty

@@ -466,4 +466,67 @@ begin
  end if;
 end $$;
 
+-- 8. Isolate student-authored tasks strictly between the student creator and the class lecturer,
+--    and avoid spamming classmates when an individual student adds a task.
+create or replace function public.read_assignment(p_assignment uuid) returns boolean
+language sql stable security definer set search_path=public as $$
+ select exists (
+  select 1
+  from public.assignments a
+  left join public.profiles p on p.id = a.author_id
+  where a.id = p_assignment
+    and (
+     public.has_role(array['admin','super_admin']::public.user_role[])
+     or public.teaches_class(a.class_id)
+     or (
+      a.published
+      and public.enrolled_in(a.class_id)
+      and (coalesce(p.role, 'dosen'::public.user_role) <> 'mahasiswa' or a.author_id = auth.uid())
+     )
+    )
+ );
+$$;
+
+create or replace function public.on_assignment_change() returns trigger
+language plpgsql security definer set search_path=public as $$
+declare
+ v_author_role public.user_role;
+begin
+ select role into v_author_role from public.profiles where id = NEW.author_id;
+
+ if TG_OP = 'UPDATE' then
+  if NEW.due_at is not distinct from OLD.due_at then
+   return NEW;
+  end if;
+ end if;
+
+ if coalesce(v_author_role, 'dosen'::public.user_role) <> 'mahasiswa' then
+  insert into public.notifications(user_id, title, message, category, action_url)
+  select e.student_id,
+   case when TG_OP = 'INSERT' then 'Tugas baru' else 'Tenggat tugas diperbarui' end,
+   NEW.title || ' • batas ' || to_char(NEW.due_at at time zone 'Asia/Jakarta', 'DD Mon YYYY HH24:MI') || ' WIB',
+   'ASSIGNMENT',
+   '/tugas/' || NEW.id::text
+  from public.class_enrollments e
+  where e.class_id = NEW.class_id
+    and e.student_id <> NEW.author_id;
+ end if;
+
+ if TG_OP = 'INSERT' then
+  insert into public.notifications(user_id, title, message, category, action_url)
+  select p.id,
+   'Tugas kelas ditambahkan',
+   NEW.title || ' • batas ' || to_char(NEW.due_at at time zone 'Asia/Jakarta', 'DD Mon YYYY HH24:MI') || ' WIB',
+   'ASSIGNMENT',
+   '/tugas/' || NEW.id::text
+  from public.classes c
+  join public.profiles p on p.identity_number = c.lecturer_identity_number
+  where c.id = NEW.class_id
+    and p.is_active
+    and p.id <> NEW.author_id;
+ end if;
+
+ return NEW;
+end $$;
+
 commit;

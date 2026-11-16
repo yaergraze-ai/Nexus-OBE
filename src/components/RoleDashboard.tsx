@@ -1,5 +1,5 @@
 import { sessionContext } from "@/lib/auth";
-import { readClasses, readNotifications } from "@/lib/data";
+import { readAssignmentsBoard, readClasses, readNotifications } from "@/lib/data";
 import { Dashboard } from "@/components/Dashboard";
 import type { DashboardInsight, DashboardTaskPreview } from "@/components/Dashboard";
 import type { Role } from "@/types/domain";
@@ -34,27 +34,29 @@ export async function RoleDashboard({ role }: { role: Role }) {
         : all;
 
   const classIds = classes.map((c) => c.id);
-  const recentTasksPromise = classIds.length
-    ? db
-        .from("assignments")
-        .select("id,title,due_at,class_id,created_at,profiles:author_id(full_name,role)")
-        .in("class_id", classIds)
-        .order("created_at", { ascending: false })
-        .limit(6)
-    : Promise.resolve({ data: [] });
+  const classIdSet = new Set(classIds);
+  const showRecentTasks = role === "mahasiswa" || role === "dosen";
+  const visibleAssignments = showRecentTasks
+    ? (await readAssignmentsBoard(db, undefined, { id: profile.id, role: profile.role })).filter(
+        (a) => classIdSet.has(a.class_id)
+      )
+    : [];
+  const recentTasks: DashboardTaskPreview[] = visibleAssignments.slice(0, 6).map((a) => ({
+    id: a.id,
+    title: a.title,
+    due_at: a.due_at,
+    class_id: a.class_id,
+  }));
 
   let ips: number | null = null;
   const insights: DashboardInsight[] = [];
 
   if (role === "mahasiswa") {
-    const [{ data: gradeRows }, { data: tasks }, { data: submissions }] = await Promise.all([
+    const [{ data: gradeRows }, { data: submissions }] = await Promise.all([
       db
         .from("vw_student_final_grades")
         .select("class_id,quality_point")
         .eq("student_id", profile.id),
-      classIds.length
-        ? db.from("assignments").select("id,due_at,published").in("class_id", classIds)
-        : Promise.resolve({ data: [] }),
       db
         .from("assignment_submissions")
         .select("assignment_id,status")
@@ -80,7 +82,7 @@ export async function RoleDashboard({ role }: { role: Role }) {
         .filter((x) => x.status === "SUBMITTED")
         .map((x) => x.assignment_id)
     );
-    const open = (tasks ?? []).filter((t) => t.published && !done.has(t.id));
+    const open = visibleAssignments.filter((t) => t.published && !done.has(t.id));
 
     insights.push({
       label: "Tugas Perlu Dikumpulkan",
@@ -234,8 +236,7 @@ export async function RoleDashboard({ role }: { role: Role }) {
     });
   }
 
-  const [recentTaskRows, liveRes, aalRes] = await Promise.all([
-    recentTasksPromise,
+  const [liveRes, aalRes] = await Promise.all([
     classIds.length
       ? db
           .from("meetings")
@@ -257,7 +258,7 @@ export async function RoleDashboard({ role }: { role: Role }) {
       liveMeetings={liveRes.data ?? []}
       insights={insights}
       announcements={(announcementRows.data ?? []) as unknown as Announcement[]}
-      recentTasks={(recentTaskRows.data ?? []) as unknown as DashboardTaskPreview[]}
+      recentTasks={recentTasks}
       actualSessions={meetingCount.count ?? 0}
       mustChangePassword={Boolean(profile.must_change_password)}
       needsMfa={

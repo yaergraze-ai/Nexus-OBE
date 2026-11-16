@@ -13,7 +13,7 @@ export default async function AssignmentsPage({
   const { db, profile } = await sessionContext();
   const [all, allAssignments, enrollRows] = await Promise.all([
     readClasses(db),
-    readAssignmentsBoard(db),
+    readAssignmentsBoard(db, undefined, { id: profile.id, role: profile.role }),
     profile.role === "mahasiswa"
       ? db.from("class_enrollments").select("class_id").eq("student_id", profile.id)
       : Promise.resolve({ data: [] }),
