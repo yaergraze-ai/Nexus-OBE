@@ -12,6 +12,7 @@ import {
   clientIp,
   consumeAuthThrottle,
   hashBucket,
+  provisionStudentAccount,
 } from "@/lib/security/auth-flow";
 
 export const runtime = "nodejs";
@@ -163,43 +164,13 @@ export async function POST(req: Request) {
 
     await admin.from("pending_signups").delete().eq("email", email);
 
-    const { error: allowErr } = await admin
-      .from("account_allowlist")
-      .upsert({ email }, { onConflict: "email" });
-    if (allowErr) throw new Error(allowErr.message);
-
-    const created = await admin.auth.admin.createUser({
+    await provisionStudentAccount({
+      admin,
       email,
+      nim,
+      fullName,
       password: body.password,
-      email_confirm: true,
-    });
-    if (created.error || !created.data.user) {
-      throw new Error(created.error?.message || "Gagal membuat akun pengguna.");
-    }
-
-    const userId = created.data.user.id;
-    // Public self-registration is strictly scoped to the 'mahasiswa' role.
-    const { error: profErr } = await admin.from("profiles").insert({
-      id: userId,
-      email,
-      identity_number: nim,
-      full_name: fullName,
-      role: "mahasiswa",
-      is_active: true,
-      must_change_password: false,
-    });
-    if (profErr) {
-      await admin.auth.admin.deleteUser(userId);
-      throw new Error(profErr.message);
-    }
-
-    await admin.from("audit_logs").insert({
-      actor_id: userId,
-      action: "STUDENT_SELF_REGISTERED",
-      target_table: "profiles",
-      target_id: userId,
-      metadata: { identity_number: nim },
-      ip_address: ip,
+      ip,
     });
 
     const db = await createClient();

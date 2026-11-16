@@ -62,6 +62,7 @@ export function PortalShell({
   const reduced = useReducedMotion();
   const [clock, setClock] = useState("");
   const [open, setOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [unread, setUnread] = useState(initialUnread);
   const [toast, setToast] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
@@ -149,6 +150,7 @@ export function PortalShell({
         pathname.startsWith(path + "/") ||
         (path === "/dashboard" && pathname.startsWith("/dashboard"));
   const activate = (path: string) => {
+    setDrawerOpen(false);
     if (preview) {
       onDemoNavigate?.(path);
       setOpen(false);
@@ -169,13 +171,14 @@ export function PortalShell({
         key={item.path}
         href={item.path}
         className={`nav-link ${active(item.path) ? "active" : ""}`}
+        onClick={() => setDrawerOpen(false)}
       >
         <i className={`bi bi-${item.icon}`} />
         <span>{item.label}</span>
       </Link>
     );
 
-  const bottomItems = ["/dashboard", "/tugas", "/pengumuman", "/notifikasi"].map(
+  const bottomItems = ["/dashboard", "/kelas", "/tugas", "/pengaturan"].map(
     (p) => menus.find((m) => m.path === p)!
   );
   const bottom = (item: (typeof menus)[number]) =>
@@ -251,9 +254,17 @@ export function PortalShell({
           )}
           <header className="topbar">
             <div className="topbar-left">
-              <span className="mobile-menu">
-                <span className="brand-mark">N</span>NEXUS OBE
-              </span>
+              <button
+                type="button"
+                className="mobile-menu"
+                aria-label="Buka menu navigasi"
+                aria-expanded={drawerOpen}
+                onClick={() => setDrawerOpen(true)}
+              >
+                <i className="bi bi-list" style={{ fontSize: 22 }} aria-hidden="true" />
+                <span className="brand-mark">N</span>
+                <span>NEXUS OBE</span>
+              </button>
               <div className="breadcrumbs">
                 Portal Akademik{" "}
                 <i className="bi bi-chevron-right" style={{ margin: "0 8px", fontSize: 9 }} />
@@ -384,6 +395,62 @@ export function PortalShell({
         <nav className="bottomnav" aria-label="Navigasi seluler">
           {bottomItems.map(bottom)}
         </nav>
+
+        <AnimatePresence>
+          {drawerOpen && (
+            <m.div
+              className="mobile-drawer-backdrop"
+              initial={reduced ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={reduced ? undefined : { opacity: 0 }}
+              onClick={() => setDrawerOpen(false)}
+            >
+              <m.aside
+                className="mobile-drawer"
+                aria-label="Menu portal seluler"
+                initial={reduced ? false : { x: -280 }}
+                animate={{ x: 0 }}
+                exit={reduced ? undefined : { x: -280 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="brand" style={{ justifyContent: "space-between", height: 70, padding: "14px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div className="brand-mark" style={{ width: 34, height: 34, fontSize: 18 }}>N</div>
+                    <div className="brand-words" style={{ fontSize: 17 }}>
+                      NEXUS OBE<small>{ROLE_LABEL[profile.role]}</small>
+                    </div>
+                  </div>
+                  <button type="button" className="close" aria-label="Tutup menu" onClick={() => setDrawerOpen(false)}>
+                    ×
+                  </button>
+                </div>
+                <div className="side-title">Menu {ROLE_LABEL[profile.role]}</div>
+                <nav className="nav-links" style={{ flex: 1 }}>
+                  {accessible.map(nav)}
+                </nav>
+                <div className="side-bottom">
+                  <div className="side-profile">
+                    <div className="avatar">
+                      {avatarUrl ? (
+                        <Image src={avatarUrl} alt={profile.full_name} width={39} height={39} unoptimized className="avatar-img" />
+                      ) : (
+                        initials(profile.full_name)
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong>{profile.full_name}</strong>
+                      <span>{profile.identity_number}</span>
+                    </div>
+                    <button className="side-logout" title="Keluar" aria-label="Keluar" onClick={logout}>
+                      <i className="bi bi-box-arrow-right" />
+                    </button>
+                  </div>
+                </div>
+              </m.aside>
+            </m.div>
+          )}
+        </AnimatePresence>
       </div>
     </LazyMotion>
   );

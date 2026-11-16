@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Role } from "@/types/domain";
 
@@ -118,4 +118,155 @@ export async function elevateMfaIfRequired(
   });
   if (verifyError) throw new Error("Kode Authenticator (TOTP) tidak valid.");
   return true;
+}
+
+export async function enrollStudentDefaultClasses(
+  admin: SupabaseClient,
+  studentId: string
+): Promise<void> {
+  const { data: classes } = await admin
+    .from("classes")
+    .select("id,class_code,courses(course_code)")
+    .order("class_code", { ascending: true });
+
+  const prioritized = [...(classes ?? [])].sort((a, b) => {
+    const ca = Array.isArray(a.courses) ? a.courses[0]?.course_code : (a.courses as { course_code?: string } | null)?.course_code;
+    const cb = Array.isArray(b.courses) ? b.courses[0]?.course_code : (b.courses as { course_code?: string } | null)?.course_code;
+    if (ca === "NEX-002" && cb !== "NEX-002") return -1;
+    if (cb === "NEX-002" && ca !== "NEX-002") return 1;
+    return String(a.class_code).localeCompare(String(b.class_code));
+  });
+
+  for (const klass of prioritized) {
+    // Schedule conflict trigger skips overlapping classes naturally; continue enrolling valid ones.
+    await admin
+      .from("class_enrollments")
+      .upsert({ class_id: klass.id, student_id: studentId }, { onConflict: "class_id,student_id" });
+  }
+}
+
+export async function provisionStudentAccount({
+  admin,
+  email,
+  nim,
+  fullName,
+  password,
+  ip,
+}: {
+  admin: SupabaseClient;
+  email: string;
+  nim: string;
+  fullName: string;
+  password?: string;
+  ip: string;
+}): Promise<string> {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanNim = nim.trim();
+  const cleanName = fullName.trim();
+
+  const [byEmail, byNim] = await Promise.all([
+    admin.from("profiles").select("id").eq("email", cleanEmail).limit(1),
+    admin.from("profiles").select("id").ilike("identity_number", cleanNim).limit(1),
+  ]);
+  if (byEmail.error || byNim.error) {
+    throw new Error("Pemeriksaan data pendaftaran gagal.");
+  }
+  if (byEmail.data?.length || byNim.data?.length) {
+    throw new Error("Email atau NIM sudah terdaftar. Silakan masuk atau gunakan Lupa Kata Sandi.");
+  }
+
+  const { error: allowErr } = await admin
+    .from("account_allowlist")
+    .upsert({ email: cleanEmail }, { onConflict: "email" });
+  if (allowErr) throw new Error(allowErr.message);
+
+  const accountPassword = password && password.length >= 8 ? password : randomBytes(24).toString("hex");
+  const created = await admin.auth.admin.createUser({
+    email: cleanEmail,
+    password: accountPassword,
+    email_confirm: true,
+  });
+  if (created.error || !created.data.user) {
+    throw new Error(created.error?.message || "Gagal membuat akun pengguna.");
+  }
+
+  const userId = created.data.user.id;
+  await Promise.resolve(admin.rpc("sync_verified_email_identity", { p_user_id: userId })).catch(() => undefined);
+
+  // Public self-registration is strictly scoped to the 'mahasiswa' role.
+  const { error: profErr } = await admin.from("profiles").insert({
+    id: userId,
+    email: cleanEmail,
+    identity_number: cleanNim,
+    full_name: cleanName,
+    role: "mahasiswa",
+    is_active: true,
+    must_change_password: false,
+  });
+  if (profErr) {
+    await admin.auth.admin.deleteUser(userId);
+    throw new Error(profErr.message);
+  }
+
+  await enrollStudentDefaultClasses(admin, userId);
+
+  await admin.from("audit_logs").insert({
+    actor_id: userId,
+    action: "STUDENT_SELF_REGISTERED",
+    target_table: "profiles",
+    target_id: userId,
+    metadata: { identity_number: cleanNim },
+    ip_address: ip,
+  });
+
+  return userId;
+}
+
+export async function verifyGoogleTokenInfo(
+  idToken: string,
+  rawNonce?: string
+): Promise<{ email: string; fullName: string }> {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim();
+  if (!clientId) {
+    throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID belum dikonfigurasi.");
+  }
+  const res = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    throw new Error("Token Google tidak valid atau sudah kedaluwarsa.");
+  }
+  const payload = (await res.json()) as {
+    aud?: string;
+    iss?: string;
+    email?: string;
+    email_verified?: string | boolean;
+    exp?: string;
+    nonce?: string;
+    name?: string;
+  };
+  const validIssuer =
+    payload.iss === "accounts.google.com" || payload.iss === "https://accounts.google.com";
+  const emailVerified = payload.email_verified === true || payload.email_verified === "true";
+  const expSec = Number(payload.exp || 0);
+  if (
+    payload.aud !== clientId ||
+    !validIssuer ||
+    !emailVerified ||
+    !payload.email ||
+    (expSec > 0 && expSec * 1000 <= Date.now())
+  ) {
+    throw new Error("Verifikasi identitas Google gagal.");
+  }
+  if (payload.nonce && rawNonce) {
+    const hashed = createHash("sha256").update(rawNonce).digest("hex");
+    if (payload.nonce !== hashed) {
+      throw new Error("Sesi tombol Google kedaluwarsa. Muat ulang halaman lalu coba lagi.");
+    }
+  }
+  return {
+    email: payload.email.trim().toLowerCase(),
+    fullName: (payload.name || payload.email.split("@")[0] || "Mahasiswa").trim().slice(0, 150),
+  };
 }

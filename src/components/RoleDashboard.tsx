@@ -7,10 +7,11 @@ import type {Announcement} from "@/types/coursework";
 import {redirect} from "next/navigation";
 export async function RoleDashboard({role}:{role:Role}){
  const {db,profile}=await sessionContext();if(profile.role!==role)redirect("/dashboard");
- const [all,notifications,announcementRows,meetingCount]=await Promise.all([
+ const [all,notifications,announcementRows,meetingCount,recentTaskRows]=await Promise.all([
   readClasses(db),readNotifications(db,profile.id),
   db.from("announcements").select("id,title,body,created_at").order("created_at",{ascending:false}).limit(3),
-  db.from("meetings").select("id",{count:"exact",head:true})
+  db.from("meetings").select("id",{count:"exact",head:true}),
+  db.from("assignments").select("id,title,due_at,class_id").order("due_at",{ascending:true}).limit(5)
  ]);
  let classes=role==="dosen"?all.filter(c=>c.lecturer_identity_number===profile.identity_number):all;
  let ips:number|null=null;const insights:DashboardInsight[]=[];
@@ -62,6 +63,6 @@ export async function RoleDashboard({role}:{role:Role}){
   db.auth.mfa.getAuthenticatorAssuranceLevel()
  ]);
  return <Dashboard profile={profile} classes={classes} notifications={notifications} ips={ips} liveMeetings={liveRows??[]}
- insights={insights} announcements={(announcementRows.data??[]) as unknown as Announcement[]} actualSessions={meetingCount.count??0}
- mustChangePassword={Boolean(profile.must_change_password)} needsMfa={profile.role!=="mahasiswa"&&aal?.currentLevel!=="aal2"}/>;
+ insights={insights} announcements={(announcementRows.data??[]) as unknown as Announcement[]} recentTasks={recentTaskRows.data??[]} actualSessions={meetingCount.count??0}
+ mustChangePassword={Boolean(profile.must_change_password)} needsMfa={profile.role!=="mahasiswa"&&aal?.nextLevel==="aal2"&&aal?.currentLevel!=="aal2"}/>;
 }

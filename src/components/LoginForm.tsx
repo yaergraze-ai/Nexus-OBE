@@ -119,6 +119,14 @@ export function LoginForm({
   const [notice, setNotice] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const [gisReady, setGisReady] = useState(false);
+  const [googlePending, setGooglePending] = useState<{
+    credential: string;
+    nonce?: string;
+    email: string;
+    fullName: string;
+  } | null>(null);
+  const [googleNim, setGoogleNim] = useState("");
+  const [googleName, setGoogleName] = useState("");
 
   const alertRef = useRef<HTMLDivElement>(null);
   const googleBtnRef = useRef<HTMLDivElement>(null);
@@ -150,8 +158,27 @@ export function LoginForm({
           ...(nonceRef.current ? { nonce: nonceRef.current } : {}),
         }),
       });
-      const body = (await response.json()) as { error?: string };
+      const body = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        needsRegistration?: boolean;
+        email?: string;
+        fullName?: string;
+      };
       if (!response.ok) throw new Error(body.error || "Masuk dengan Google gagal.");
+      if (body.needsRegistration && body.email) {
+        setGooglePending({
+          credential: res.credential,
+          nonce: nonceRef.current || undefined,
+          email: body.email,
+          fullName: body.fullName || "",
+        });
+        setGoogleName(body.fullName || "");
+        setGoogleNim("");
+        setNotice(`Email Google ${body.email} terverifikasi. Masukkan NIM Anda untuk membuat akun mahasiswa.`);
+        setBusy(false);
+        return;
+      }
       window.location.assign("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Masuk dengan Google gagal.");
@@ -159,7 +186,33 @@ export function LoginForm({
     }
   }, []);
 
-  const showGoogleSection = mode === "password" || mode === "otp" || mode === "register";
+  const submitGoogleRegistration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!googlePending) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          credential: googlePending.credential,
+          ...(googlePending.nonce ? { nonce: googlePending.nonce } : {}),
+          nim: googleNim.trim(),
+          fullName: googleName.trim() || googlePending.fullName,
+        }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Pendaftaran Google gagal.");
+      window.location.assign("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Pendaftaran Google gagal.");
+      setBusy(false);
+    }
+  };
+
+  const showGoogleSection =
+    !googlePending && (mode === "password" || mode === "otp" || mode === "register");
   const showMainTabs = showGoogleSection;
 
   useEffect(() => {
@@ -167,7 +220,10 @@ export function LoginForm({
   }, [handleGoogleCredential]);
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !showGoogleSection) return;
+    if (!GOOGLE_CLIENT_ID || !showGoogleSection) {
+      setGisReady(false);
+      return;
+    }
     let cancelled = false;
 
     const renderGis = async () => {
@@ -249,13 +305,15 @@ export function LoginForm({
     setOtp("");
     setTotpCode("");
     setRequiresMfa(false);
+    setGooglePending(null);
     if (nextMode === "otp") setOtpRequested(false);
     if (nextMode === "register") setRegisterRequested(false);
     if (nextMode === "recovery") setRecoveryStep("request");
   };
 
-  const viewKey =
-    mode === "otp"
+  const viewKey = googlePending
+    ? "google-register"
+    : mode === "otp"
       ? `otp-${otpRequested ? "verify" : "request"}`
       : mode === "register"
         ? `register-${registerRequested ? "verify" : "request"}`
@@ -515,8 +573,9 @@ export function LoginForm({
     }
   };
 
-  const heading =
-    mode === "otp"
+  const heading = googlePending
+    ? "Lengkapi Akun Google"
+    : mode === "otp"
       ? "Masuk dengan OTP"
       : mode === "register"
         ? "Daftar Akun Mahasiswa"
@@ -524,8 +583,9 @@ export function LoginForm({
           ? "Atur ulang kata sandi"
           : "Selamat datang";
 
-  const subtitle =
-    mode === "otp"
+  const subtitle = googlePending
+    ? `Email ${googlePending.email} belum terdaftar di portal. Masukkan NIM Mahasiswa untuk menyelesaikan pendaftaran.`
+    : mode === "otp"
       ? "Masukkan email yang terdaftar pada akun Anda untuk menerima kode OTP 6 digit."
       : mode === "register"
         ? "Daftarkan akun mahasiswa baru menggunakan Email, NIM, dan verifikasi OTP email."
@@ -670,7 +730,51 @@ export function LoginForm({
             </AnimatePresence>
 
             <AnimatePresence mode="wait" initial={false}>
-              {mode === "password" && (
+              {googlePending && (
+                <m.form
+                  key="google-register"
+                  onSubmit={submitGoogleRegistration}
+                  className="auth-form-body"
+                  {...motionProps}
+                >
+                  <div className="field">
+                    <label htmlFor="g-reg-name">Nama lengkap</label>
+                    <input
+                      id="g-reg-name"
+                      className="input"
+                      minLength={3}
+                      maxLength={150}
+                      required
+                      value={googleName}
+                      onChange={(e) => setGoogleName(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="g-reg-nim">NIM Mahasiswa</label>
+                    <input
+                      id="g-reg-nim"
+                      className="input"
+                      minLength={4}
+                      maxLength={30}
+                      required
+                      placeholder="Contoh: 240511088"
+                      value={googleNim}
+                      onChange={(e) => setGoogleNim(e.target.value)}
+                    />
+                  </div>
+                  <m.button
+                    type="submit"
+                    className="btn btn-primary btn-full auth-submit"
+                    disabled={busy}
+                    whileTap={reducedMotion || busy ? undefined : { scale: 0.985 }}
+                  >
+                    {busy ? "Mendaftarkan akun..." : "Buat Akun Mahasiswa & Masuk"}
+                    <i className="bi bi-check2-circle" aria-hidden="true" />
+                  </m.button>
+                </m.form>
+              )}
+
+              {!googlePending && mode === "password" && (
                 <m.form
                   key={viewKey}
                   onSubmit={handlePasswordLogin}
@@ -740,7 +844,7 @@ export function LoginForm({
                 </m.form>
               )}
 
-              {mode === "otp" && !otpRequested && (
+              {!googlePending && mode === "otp" && !otpRequested && (
                 <m.form
                   key={viewKey}
                   onSubmit={(e) => {
@@ -783,7 +887,7 @@ export function LoginForm({
                 </m.form>
               )}
 
-              {mode === "otp" && otpRequested && (
+              {!googlePending && mode === "otp" && otpRequested && (
                 <m.form
                   key={viewKey}
                   onSubmit={verifyOtpLogin}
@@ -845,7 +949,7 @@ export function LoginForm({
                 </m.form>
               )}
 
-              {mode === "register" && !registerRequested && (
+              {!googlePending && mode === "register" && !registerRequested && (
                 <m.form
                   key={viewKey}
                   onSubmit={(e) => void requestRegisterOtp(e)}
@@ -925,7 +1029,7 @@ export function LoginForm({
                 </m.form>
               )}
 
-              {mode === "register" && registerRequested && (
+              {!googlePending && mode === "register" && registerRequested && (
                 <m.form
                   key={viewKey}
                   onSubmit={verifyRegisterOtp}

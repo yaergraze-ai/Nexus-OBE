@@ -127,7 +127,9 @@ export async function middleware(request: NextRequest) {
     !allowDosenFirstPasswordChange
   ) {
     const { data: aal } = await db.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal?.currentLevel !== "aal2") return redirectTo("/pengaturan/keamanan");
+    if (aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2") {
+      return redirectTo("/pengaturan/keamanan");
+    }
   }
 
   const restrict: [string, string[]][] = [

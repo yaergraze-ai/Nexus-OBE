@@ -1,5 +1,5 @@
 // Run before accessing storage. The server never trusts browser-provided MIME.
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 export const MAX_REFERENCE_FILE_BYTES = 50 * 1024 * 1024;
 export const ATTACHMENT_BUCKET = "assignment-private";
 export const MEETING_REF_BUCKET = "meeting-references";
@@ -8,14 +8,19 @@ export type AttachmentCheck = { mime: string; extension: string } | { error: str
 
 const ASSIGNMENT_FORMATS: Record<string, string> = {
   pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  zip: "application/zip",
+  rar: "application/vnd.rar",
+  "7z": "application/x-7z-compressed",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   webp: "image/webp",
-  zip: "application/zip",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   txt: "text/plain",
   md: "text/markdown",
   csv: "text/csv",
@@ -23,11 +28,6 @@ const ASSIGNMENT_FORMATS: Record<string, string> = {
 
 export const REFERENCE_FORMATS: Record<string, string> = {
   ...ASSIGNMENT_FORMATS,
-  doc: "application/msword",
-  xls: "application/vnd.ms-excel",
-  ppt: "application/vnd.ms-powerpoint",
-  rar: "application/vnd.rar",
-  "7z": "application/x-7z-compressed",
   bib: "application/x-bibtex",
   ris: "application/x-research-info-systems",
 };
@@ -84,8 +84,20 @@ function inspectByFormats(
   return { mime, extension: ext };
 }
 
-export function inspectAttachment(filename: string, bytes: Uint8Array): AttachmentCheck {
-  return inspectByFormats(filename, bytes, ASSIGNMENT_FORMATS, MAX_ATTACHMENT_BYTES);
+export function attachmentMimeForName(
+  filename: string
+): { mime: string; extension: string } | null {
+  const ext = filename.toLowerCase().split(".").pop() ?? "";
+  const mime = ASSIGNMENT_FORMATS[ext];
+  return mime ? { mime, extension: ext } : null;
+}
+
+export function inspectAttachment(
+  filename: string,
+  bytes: Uint8Array,
+  totalSize = bytes.byteLength
+): AttachmentCheck {
+  return inspectByFormats(filename, bytes, ASSIGNMENT_FORMATS, MAX_ATTACHMENT_BYTES, totalSize);
 }
 
 export function inspectReferenceFile(

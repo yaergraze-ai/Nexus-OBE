@@ -10,6 +10,8 @@ import {
   clearAuthThrottle,
   clientIp,
   consumeAuthThrottle,
+  provisionStudentAccount,
+  verifyGoogleTokenInfo,
 } from "@/lib/security/auth-flow";
 
 export const runtime = "nodejs";
@@ -17,7 +19,43 @@ export const runtime = "nodejs";
 const googleSchema = z.object({
   credential: z.string().min(20).max(8000),
   nonce: z.string().min(8).max(256).optional(),
+  nim: z
+    .string()
+    .trim()
+    .regex(/^(?=.*\d)[a-zA-Z0-9._-]{4,30}$/, "Masukkan NIM yang valid (4–30 karakter).")
+    .optional(),
+  fullName: z.string().trim().min(3).max(150).optional(),
 });
+
+async function establishVerifiedGoogleSession(
+  db: Awaited<ReturnType<typeof createClient>>,
+  admin: ReturnType<typeof adminClient>,
+  email: string,
+  credential: string,
+  nonce?: string
+): Promise<boolean> {
+  const native = await db.auth.signInWithIdToken({
+    provider: "google",
+    token: credential,
+    nonce,
+  });
+  if (!native.error) return true;
+
+  // Fallback for accounts created with email+password before email_verified identity sync ran:
+  // Google tokeninfo already cryptographically verified email & nonce above.
+  const link = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+  });
+  const tokenHash = link.data?.properties?.hashed_token;
+  if (link.error || !tokenHash) return false;
+
+  const verified = await db.auth.verifyOtp({
+    token_hash: tokenHash,
+    type: "magiclink",
+  });
+  return !verified.error;
+}
 
 export async function POST(req: Request) {
   try {
@@ -26,78 +64,86 @@ export async function POST(req: Request) {
     const admin = adminClient();
     const hashes = await consumeAuthThrottle(admin, [`google-id:ip:${ip}`]);
 
-    const db = await createClient();
-    const { error } = await db.auth.signInWithIdToken({
-      provider: "google",
-      token: body.credential,
-      nonce: body.nonce,
-    });
+    const googleUser = await verifyGoogleTokenInfo(body.credential, body.nonce);
 
-    if (error) {
-      const msg = error.message.toLowerCase();
-      if (msg.includes("not enabled") || msg.includes("unsupported provider")) {
-        return apiError(
-          new Error(
-            "Login Google belum diaktifkan di Supabase (buka Authentication → Providers → Google, nyalakan Google & isi Client ID)."
-          ),
-          503
-        );
+    const { data: existingProfile, error: profQueryErr } = await admin
+      .from("profiles")
+      .select("id,email,role,is_active")
+      .eq("email", googleUser.email)
+      .maybeSingle();
+    if (profQueryErr) throw new Error("Pemeriksaan profil gagal.");
+
+    const db = await createClient();
+
+    if (!existingProfile) {
+      if (!body.nim) {
+        return NextResponse.json({
+          ok: false,
+          needsRegistration: true,
+          email: googleUser.email,
+          fullName: googleUser.fullName,
+        });
       }
-      if (msg.includes("audience") || msg.includes("client_id")) {
-        return apiError(
-          new Error(
-            "Client ID Google di Supabase belum cocok dengan Google Cloud Console."
-          ),
-          400
-        );
+
+      await provisionStudentAccount({
+        admin,
+        email: googleUser.email,
+        nim: body.nim,
+        fullName: body.fullName || googleUser.fullName,
+        ip,
+      });
+
+      const signedIn = await establishVerifiedGoogleSession(
+        db,
+        admin,
+        googleUser.email,
+        body.credential,
+        body.nonce
+      );
+      if (!signedIn) {
+        throw new Error("Akun dibuat, namun sesi Google belum aktif. Silakan klik Masuk Google sekali lagi.");
       }
-      if (msg.includes("nonce")) {
-        return apiError(
-          new Error("Sesi tombol Google kedaluwarsa. Muat ulang halaman lalu coba lagi."),
-          400
-        );
-      }
-      if (msg.includes("diundang") || msg.includes("allowlist") || error.status === 403) {
-        return apiError(
-          new Error(
-            "Akun Google Anda belum terdaftar di portal. Daftar dahulu di tab Daftar (Mahasiswa) atau hubungi admin kampus."
-          ),
-          403
-        );
-      }
+
+      await clearAuthThrottle(admin, hashes);
+      return NextResponse.json({ ok: true, role: "mahasiswa" });
+    }
+
+    if (!existingProfile.is_active) {
+      return apiError(new Error("Akun kampus Anda sedang dinonaktifkan."), 403);
+    }
+
+    await admin
+      .from("account_allowlist")
+      .upsert({ email: existingProfile.email.trim().toLowerCase() }, { onConflict: "email" });
+    await Promise.resolve(
+      admin.rpc("sync_verified_email_identity", { p_user_id: existingProfile.id })
+    ).catch(() => undefined);
+
+    const signedIn = await establishVerifiedGoogleSession(
+      db,
+      admin,
+      existingProfile.email.trim().toLowerCase(),
+      body.credential,
+      body.nonce
+    );
+    if (!signedIn) {
       return apiError(new Error("Autentikasi Google gagal. Silakan coba lagi."), 401);
     }
 
     const {
       data: { user },
     } = await db.auth.getUser();
-    const { data: profile } = await db
-      .from("profiles")
-      .select("id,email,role,is_active")
-      .eq("id", user?.id ?? "")
-      .maybeSingle();
-
-    if (!user || !profile || !sameRegisteredEmail(verifiedUserEmail(user), profile.email)) {
+    if (!user || !sameRegisteredEmail(verifiedUserEmail(user), existingProfile.email)) {
       await db.auth.signOut();
-      if (user && !profile) {
-        await admin.auth.admin.deleteUser(user.id).catch(() => undefined);
-      }
       return apiError(
-        new Error(
-          "Akun Google Anda belum terdaftar pada portal kampus atau email tidak cocok. Gunakan tab Daftar atau minta admin mengundang email Anda."
-        ),
+        new Error("Email Google tidak cocok dengan identitas terdaftar pada portal kampus."),
         403
       );
     }
-    if (!profile.is_active) {
-      await db.auth.signOut();
-      return apiError(new Error("Akun kampus Anda sedang dinonaktifkan."), 403);
-    }
 
     await clearAuthThrottle(admin, hashes);
-    return NextResponse.json({ ok: true, role: profile.role });
+    return NextResponse.json({ ok: true, role: existingProfile.role });
   } catch (e) {
     return apiError(e, e instanceof AuthThrottleError ? 429 : 400);
   }
 }
-

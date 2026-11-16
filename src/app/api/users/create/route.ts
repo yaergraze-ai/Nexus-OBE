@@ -60,6 +60,7 @@ export async function POST(req: Request) {
         throw new Error(created.error?.message || "Gagal membuat akun.");
       }
       userId = created.data.user.id;
+      await Promise.resolve(db.rpc("sync_verified_email_identity", { p_user_id: userId })).catch(() => undefined);
     } else {
       const site =
         process.env.NEXT_PUBLIC_SITE_URL &&

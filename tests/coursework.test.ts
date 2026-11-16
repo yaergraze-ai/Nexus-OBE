@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { detectScheduleConflicts, type WeeklyCandidate } from "../src/lib/utils/schedule-conflicts";
-import { inspectAttachment, inspectReferenceFile, safeFileName } from "../src/lib/assignments/attachments";
+import { attachmentMimeForName, inspectAttachment, inspectReferenceFile, MAX_ATTACHMENT_BYTES, safeFileName } from "../src/lib/assignments/attachments";
 import { safeExternalUrl } from "../src/lib/assignments/links";
 import { assignmentInput, deleteAssignmentInput } from "../src/lib/assignments/validation";
 import { wibInput, wibToIso } from "../src/lib/utils/wib";
@@ -71,4 +71,16 @@ test("assignment validation accepts optional meetingId and delete schema validat
     assert.equal(parsed.meetingId, meetingId);
     assert.equal(deleteAssignmentInput.parse({ assignmentId: meetingId }).assignmentId, meetingId);
     assert.throws(() => deleteAssignmentInput.parse({ assignmentId: "not-a-uuid" }));
+});
+
+test("student assignment attachments support doc/rar/pdf up to 50 MB and reject oversize", () => {
+    assert.deepEqual(attachmentMimeForName("laporan.docx"), {
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        extension: "docx",
+    });
+    assert.deepEqual(
+        inspectAttachment("laporan.doc", new Uint8Array([208, 207, 17, 224, 161, 177, 26, 225]), 12 * 1024 * 1024),
+        { mime: "application/msword", extension: "doc" }
+    );
+    assert.ok("error" in inspectAttachment("besar.pdf", new Uint8Array([37, 80, 68, 70, 45]), MAX_ATTACHMENT_BYTES + 1));
 });
